@@ -21,6 +21,8 @@
  *                                                                          *
  ***************************************************************************/
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include <QAbstractNativeEventFilter>
@@ -392,22 +394,59 @@ void RibbonTitleBar::updateQuickAccessIcons()
     }
 
     const qreal ratio = devicePixelRatioF();
-    for (const auto& [button, action] : _quickButtons) {
-        if (!button || !action) {
+    const QString family = iconFontFamily();
+    for (const auto& item : _quickButtons) {
+        if (!item.button || !item.action) {
             continue;
         }
-        // Keep only the shape of the icon and fill it with the color
-        QPixmap shape = action->icon().pixmap(QSize(quickIconSize, quickIconSize), ratio);
-        QPixmap pixmap(shape.size());
-        pixmap.setDevicePixelRatio(shape.devicePixelRatio());
-        pixmap.fill(Qt::transparent);
-        QPainter painter(&pixmap);
-        painter.drawPixmap(0, 0, shape);
-        painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-        painter.fillRect(pixmap.rect(), color);
-        painter.end();
-        button->setIcon(QIcon(pixmap));
+        auto glyph = quickAccessGlyphs.find(item.command);
+        if (!family.isEmpty() && glyph != quickAccessGlyphs.end()) {
+            item.button->setIcon(glyphIcon(family, QChar(glyph->second), color, ratio));
+        }
+        else {
+            item.button->setIcon(grayIcon(item.action->icon(), color, ratio));
+        }
     }
+}
+
+QIcon RibbonTitleBar::glyphIcon(const QString& family, QChar glyph, const QColor& color, qreal ratio)
+{
+    QPixmap pixmap(QSize(quickIconSize, quickIconSize) * ratio);
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+
+    QFont font(family);
+    font.setPixelSize(quickIconSize);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::TextAntialiasing);
+    painter.setFont(font);
+    painter.setPen(color);
+    painter.drawText(QRect(0, 0, quickIconSize, quickIconSize), Qt::AlignCenter, QString(glyph));
+    painter.end();
+
+    return QIcon(pixmap);
+}
+
+QIcon RibbonTitleBar::grayIcon(const QIcon& icon, const QColor& color, qreal ratio)
+{
+    // Monochrome but with the inner details: the brightness of each pixel becomes its
+    // opacity in the given color, so dark lines stay visible inside light shapes
+    QImage image = icon.pixmap(QSize(quickIconSize, quickIconSize), ratio)
+                       .toImage()
+                       .convertToFormat(QImage::Format_ARGB32);
+    const bool darkColor = color.lightness() < 128;
+    for (int y = 0; y < image.height(); ++y) {
+        auto line = reinterpret_cast<QRgb*>(image.scanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            const int gray = qGray(line[x]);
+            const int weight = darkColor ? 255 - gray : gray;
+            const int alpha = qAlpha(line[x]) * (80 + weight * 175 / 255) / 255;
+            line[x] = qRgba(color.red(), color.green(), color.blue(), alpha);
+        }
+    }
+    QPixmap pixmap = QPixmap::fromImage(image);
+    pixmap.setDevicePixelRatio(ratio);
+    return QIcon(pixmap);
 }
 
 void RibbonTitleBar::setupSearchAndHelp(QHBoxLayout* layout)

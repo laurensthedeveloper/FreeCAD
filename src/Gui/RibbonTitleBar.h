@@ -24,7 +24,7 @@
 #pragma once
 
 #include <memory>
-#include <utility>
+#include <string>
 #include <vector>
 
 #include <QPointer>
@@ -79,9 +79,18 @@ private:
     void updateWindowButtons();
     QIcon searchIcon() const;
 
-    static constexpr int quickIconSize = 12;
+    static constexpr int quickIconSize = 13;
 
-    std::vector<std::pair<QPointer<QToolButton>, QPointer<QAction>>> _quickButtons;
+    static QIcon glyphIcon(const QString& family, QChar glyph, const QColor& color, qreal ratio);
+    static QIcon grayIcon(const QIcon& icon, const QColor& color, qreal ratio);
+
+    struct QuickButton
+    {
+        QPointer<QToolButton> button;
+        QPointer<QAction> action;
+        std::string command;
+    };
+    std::vector<QuickButton> _quickButtons;
     QWidget* _leftPart = nullptr;
     QWidget* _rightPart = nullptr;
     QLabel* _logo;
