@@ -2279,7 +2279,8 @@ void View3DInventorViewer::updateGroundGridColors()
         return;
     }
 
-    // Light lines on a dark or medium background, dark lines on a light one
+    // Light lines on a dark background, grey lines on a light one. The light spot on the
+    // ground brightens the background further, so light lines would hardly show there.
     SbColor background;
     if (getGradientBackground() == Background::NoGradient) {
         const QColor color = backgroundColor();
@@ -2289,7 +2290,7 @@ void View3DInventorViewer::updateGroundGridColors()
         background = (pcBackGround->fromColor.getValue() + pcBackGround->toColor.getValue()) / 2.0F;
     }
     const float luminance = background.dot(SbVec3f(0.299F, 0.587F, 0.114F));
-    groundGrid->color = luminance > 0.8F ? SbColor(0.15F, 0.17F, 0.2F) : SbColor(1.0F, 1.0F, 1.0F);
+    groundGrid->color = luminance > 0.5F ? SbColor(0.35F, 0.38F, 0.42F) : SbColor(1.0F, 1.0F, 1.0F);
 
     groundGrid->xAxisColor.setValue(m_xColor.r, m_xColor.g, m_xColor.b);
     groundGrid->yAxisColor.setValue(m_yColor.r, m_yColor.g, m_yColor.b);
