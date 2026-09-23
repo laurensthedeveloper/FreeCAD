@@ -1,0 +1,455 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/****************************************************************************
+ *                                                                          *
+ *   Copyright (c) 2026 laurensthedeveloper                                 *
+ *                                                                          *
+ *   This file is part of FreeCAD.                                          *
+ *                                                                          *
+ *   FreeCAD is free software: you can redistribute it and/or modify it     *
+ *   under the terms of the GNU Lesser General Public License as            *
+ *   published by the Free Software Foundation, either version 2.1 of the   *
+ *   License, or (at your option) any later version.                        *
+ *                                                                          *
+ *   FreeCAD is distributed in the hope that it will be useful, but         *
+ *   WITHOUT ANY WARRANTY; without even the implied warranty of             *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU       *
+ *   Lesser General Public License for more details.                        *
+ *                                                                          *
+ *   You should have received a copy of the GNU Lesser General Public       *
+ *   License along with FreeCAD. If not, see                                *
+ *   <https://www.gnu.org/licenses/>.                                       *
+ *                                                                          *
+ ***************************************************************************/
+
+#include <vector>
+
+#include <QAbstractNativeEventFilter>
+#include <QApplication>
+#include <QEvent>
+#include <QFontDatabase>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMenuBar>
+#include <QPainter>
+#include <QShortcut>
+#include <QTimer>
+#include <QToolBar>
+#include <QToolButton>
+#include <QWindow>
+
+#include <App/Application.h>
+
+#include "RibbonTitleBar.h"
+#include "Application.h"
+#include "BitmapFactory.h"
+#include "Command.h"
+#include "CommandCompleter.h"
+
+#if defined(Q_OS_WIN)
+# include <qpa/qplatformwindow_p.h>
+# ifndef NOMINMAX
+#  define NOMINMAX
+# endif
+# include <windows.h>
+# include <windowsx.h>
+#endif
+
+using namespace Gui;
+
+namespace
+{
+// File and edit commands available on every tab
+const std::vector<const char*> quickAccessCommands {
+    "Std_New",
+    "Std_Open",
+    "Std_Save",
+    "Std_Export",
+    "Separator",
+    "Std_Undo",
+    "Std_Redo",
+    "Std_Cut",
+    "Std_Copy",
+    "Std_Paste",
+    "Std_Delete",
+    "Separator",
+    "Std_Refresh",
+};
+
+bool customFrameEnabled()
+{
+#if defined(Q_OS_WIN)
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow"
+    );
+    return hGrp->GetBool("RibbonCustomTitleBar", true);
+#else
+    return false;
+#endif
+}
+}  // namespace
+
+// -----------------------------------------------------------
+
+#if defined(Q_OS_WIN)
+
+namespace
+{
+int frameThickness(HWND hwnd)
+{
+    const UINT dpi = GetDpiForWindow(hwnd);
+    return GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+}
+
+int captionHeight(HWND hwnd)
+{
+    return GetSystemMetricsForDpi(SM_CYCAPTION, GetDpiForWindow(hwnd));
+}
+}  // namespace
+
+/**
+ * Tells Windows which parts of the main window act as caption and top resize border,
+ * now that the system caption is removed.
+ */
+class RibbonTitleBar::NativeFilter: public QAbstractNativeEventFilter
+{
+public:
+    NativeFilter(RibbonTitleBar* bar, HWND hwnd)
+        : _bar(bar)
+        , _hwnd(hwnd)
+    {}
+
+    bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override
+    {
+        if (eventType != "windows_generic_MSG") {
+            return false;
+        }
+        auto msg = static_cast<MSG*>(message);
+        if (msg->hwnd != _hwnd) {
+            return false;
+        }
+
+        switch (msg->message) {
+            case WM_NCHITTEST:
+                return hitTest(msg, result);
+            case WM_DPICHANGED:
+                // The caption and frame sizes depend on the DPI
+                QTimer::singleShot(0, _bar, [bar = _bar] { bar->updateCustomFrame(); });
+                break;
+            default:
+                break;
+        }
+        return false;
+    }
+
+private:
+    bool hitTest(const MSG* msg, qintptr* result) const
+    {
+        POINT point {GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam)};
+        ScreenToClient(_hwnd, &point);
+        RECT client;
+        GetClientRect(_hwnd, &client);
+        if (!PtInRect(&client, point)) {
+            return false;  // the remaining system frame handles itself
+        }
+
+        // The top resize border, which is part of the client area now
+        const int frame = frameThickness(_hwnd);
+        if (!IsZoomed(_hwnd) && point.y < frame) {
+            if (point.x < 2 * frame) {
+                *result = HTTOPLEFT;
+            }
+            else if (point.x >= client.right - 2 * frame) {
+                *result = HTTOPRIGHT;
+            }
+            else {
+                *result = HTTOP;
+            }
+            return true;
+        }
+
+        QWidget* window = _bar->window();
+        const qreal ratio = window->devicePixelRatioF();
+        const QPoint pos(qRound(point.x / ratio), qRound(point.y / ratio));
+        if (_bar->isCaption(window->childAt(pos), pos)) {
+            *result = HTCAPTION;
+            return true;
+        }
+        return false;
+    }
+
+    RibbonTitleBar* _bar;
+    HWND _hwnd;
+};
+
+#else
+
+class RibbonTitleBar::NativeFilter
+{
+};
+
+#endif
+
+// -----------------------------------------------------------
+
+RibbonTitleBar::RibbonTitleBar(QWidget* parent)
+    : QWidget(parent)
+    , _logo(new QLabel(this))
+    , _title(new QLabel(this))
+{
+    setObjectName(QStringLiteral("RibbonTitleBar"));
+
+    auto layout = new QHBoxLayout(this);
+    layout->setContentsMargins(8, 0, 0, 4);
+    layout->setSpacing(6);
+
+    _logo->setObjectName(QStringLiteral("RibbonLogo"));
+    _logo->setPixmap(BitmapFactory().iconFromTheme("freecad").pixmap(QSize(20, 20)));
+    layout->addWidget(_logo);
+
+    setupQuickAccess(layout);
+    layout->addStretch();
+
+    // The window title, e.g. the active document
+    _title->setObjectName(QStringLiteral("RibbonWindowTitle"));
+    _title->setTextFormat(Qt::PlainText);
+    layout->addWidget(_title);
+    layout->addStretch();
+
+    setupSearchAndHelp(layout);
+
+    if (customFrameEnabled()) {
+        setupWindowButtons(layout);
+        // The native window only exists once the main window is shown
+        QMetaObject::invokeMethod(this, &RibbonTitleBar::enableCustomFrame, Qt::QueuedConnection);
+    }
+
+    if (QWidget* window = parent ? parent->window() : nullptr) {
+        window->installEventFilter(this);
+        _title->setText(window->windowTitle());
+    }
+}
+
+RibbonTitleBar::~RibbonTitleBar()
+{
+#if defined(Q_OS_WIN)
+    if (_nativeFilter) {
+        qApp->removeNativeEventFilter(_nativeFilter.get());
+    }
+#endif
+}
+
+void RibbonTitleBar::setupQuickAccess(QHBoxLayout* layout)
+{
+    // Small icon only buttons, the file and edit commands used on every tab
+    auto toolbar = new QToolBar(this);
+    toolbar->setObjectName(QStringLiteral("RibbonQuickAccess"));
+    toolbar->setIconSize(QSize(16, 16));
+    toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    toolbar->setMovable(false);
+
+    auto& commandManager = Application::Instance->commandManager();
+    for (const char* command : quickAccessCommands) {
+        if (qstrcmp(command, "Separator") == 0) {
+            toolbar->addSeparator();
+        }
+        else if (commandManager.getCommandByName(command)) {
+            commandManager.addTo(command, toolbar);
+        }
+    }
+    layout->addWidget(toolbar);
+}
+
+void RibbonTitleBar::setupSearchAndHelp(QHBoxLayout* layout)
+{
+    // Command search, like the command palette of other applications
+    auto search = new QLineEdit(this);
+    search->setObjectName(QStringLiteral("RibbonSearch"));
+    search->setPlaceholderText(tr("Search commands (Ctrl+K)"));
+    search->setToolTip(tr("Type at least three characters to find a command, "
+                          "press Enter to run it"));
+    search->setClearButtonEnabled(true);
+    search->setFixedWidth(260);
+    search->addAction(searchIcon(), QLineEdit::LeadingPosition);
+
+    auto completer = new CommandCompleter(search, search);
+    connect(completer, &CommandCompleter::commandActivated, this, [search](const QByteArray& name) {
+        search->clear();
+        search->clearFocus();
+        Application::Instance->commandManager().runCommandByName(name.constData());
+    });
+
+    auto shortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), this);
+    shortcut->setContext(Qt::WindowShortcut);
+    connect(shortcut, &QShortcut::activated, search, [search] {
+        search->setFocus(Qt::ShortcutFocusReason);
+        search->selectAll();
+    });
+    layout->addWidget(search);
+
+    // Help, the same as Help > Help (F1)
+    auto help = new QToolButton(this);
+    help->setObjectName(QStringLiteral("RibbonHelpButton"));
+    help->setToolTip(tr("Opens the Help documentation"));
+    help->setIcon(BitmapFactory().iconFromTheme("help-browser"));
+    help->setIconSize(QSize(18, 18));
+    connect(help, &QToolButton::clicked, this, [] {
+        Application::Instance->commandManager().runCommandByName("Std_OnlineHelp");
+    });
+    layout->addWidget(help);
+}
+
+void RibbonTitleBar::setupWindowButtons(QHBoxLayout* layout)
+{
+    // The glyphs of the Windows caption buttons, from the icon font of Windows 11 or 10
+    const QStringList families = QFontDatabase::families();
+    QFont font(families.contains(QStringLiteral("Segoe Fluent Icons"))
+                   ? QStringLiteral("Segoe Fluent Icons")
+                   : QStringLiteral("Segoe MDL2 Assets"));
+    font.setPointSizeF(7.5);
+
+    _windowButtons = new QWidget(this);
+    auto buttonLayout = new QHBoxLayout(_windowButtons);
+    buttonLayout->setContentsMargins(8, 0, 0, 0);
+    buttonLayout->setSpacing(0);
+
+    auto addButton = [&](const QString& name, QChar glyph, const QString& tip, auto slot) {
+        auto button = new QToolButton(_windowButtons);
+        button->setObjectName(name);
+        button->setProperty("windowButton", true);
+        button->setFont(font);
+        button->setText(glyph);
+        button->setToolTip(tip);
+        button->setFixedSize(46, 32);
+        connect(button, &QToolButton::clicked, this, slot);
+        buttonLayout->addWidget(button);
+        return button;
+    };
+
+    addButton(QStringLiteral("RibbonMinimizeButton"), QChar(0xE921), tr("Minimize"), [this] {
+        window()->showMinimized();
+    });
+    _maximizeButton = addButton(QStringLiteral("RibbonMaximizeButton"), QChar(0xE922), tr("Maximize"), [this] {
+        window()->isMaximized() ? window()->showNormal() : window()->showMaximized();
+    });
+    addButton(QStringLiteral("RibbonCloseButton"), QChar(0xE8BB), tr("Close"), [this] {
+        window()->close();
+    });
+
+    layout->addWidget(_windowButtons, 0, Qt::AlignTop);
+    _windowButtons->hide();  // shown once the system caption is removed
+}
+
+void RibbonTitleBar::enableCustomFrame()
+{
+#if defined(Q_OS_WIN)
+    QWidget* window = this->window();
+    if (_customFrame || !window->isWindow() || !window->windowHandle()) {
+        return;
+    }
+
+    _customFrame = true;
+    auto hwnd = reinterpret_cast<HWND>(window->winId());
+    _nativeFilter = std::make_unique<NativeFilter>(this, hwnd);
+    qApp->installNativeEventFilter(_nativeFilter.get());
+
+    _windowButtons->show();
+    updateCustomFrame();
+#endif
+}
+
+void RibbonTitleBar::updateCustomFrame()
+{
+#if defined(Q_OS_WIN)
+    QWidget* window = this->window();
+    QWindow* handle = window->windowHandle();
+    if (!_customFrame || !handle) {
+        return;
+    }
+
+    using QNativeInterface::Private::QWindowsWindow;
+    auto windowsWindow = handle->nativeInterface<QWindowsWindow>();
+    if (!windowsWindow) {
+        return;
+    }
+
+    // Remove the caption, and the top frame too unless maximized: a maximized window
+    // extends beyond the screen by the frame, so only the caption must go. Full screen
+    // windows have no frame at all.
+    auto hwnd = reinterpret_cast<HWND>(window->winId());
+    QMargins margins;
+    if (!window->isFullScreen()) {
+        int top = captionHeight(hwnd);
+        if (!window->isMaximized()) {
+            top += frameThickness(hwnd);
+        }
+        margins = QMargins(0, -top, 0, 0);
+    }
+    if (windowsWindow->customMargins() != margins) {
+        windowsWindow->setCustomMargins(margins);
+    }
+    _windowButtons->setVisible(!window->isFullScreen());
+    updateWindowButtons();
+#endif
+}
+
+void RibbonTitleBar::updateWindowButtons()
+{
+    if (!_maximizeButton) {
+        return;
+    }
+    const bool maximized = window()->isMaximized();
+    _maximizeButton->setText(QChar(maximized ? 0xE923 : 0xE922));
+    _maximizeButton->setToolTip(maximized ? tr("Restore") : tr("Maximize"));
+}
+
+bool RibbonTitleBar::isCaption(const QWidget* child, const QPoint& posInWindow) const
+{
+    // Only the height of the title row, and there only the parts without controls
+    const QRect rect(mapTo(window(), QPoint(0, 0)), size());
+    if (posInWindow.y() > rect.bottom()) {
+        return false;
+    }
+    return !child || child == window() || child == this || child == _logo || child == _title
+        || child == _windowButtons || child == parentWidget()
+        || qobject_cast<const QMenuBar*>(child)
+        || (qobject_cast<const QToolBar*>(child) && !isAncestorOf(child));
+}
+
+bool RibbonTitleBar::eventFilter(QObject* source, QEvent* ev)
+{
+    if (source == window()) {
+        switch (ev->type()) {
+            case QEvent::WindowTitleChange:
+                _title->setText(window()->windowTitle());
+                break;
+            case QEvent::WindowStateChange:
+                // Queued, as the frame must not change from within this event
+                QMetaObject::invokeMethod(this, &RibbonTitleBar::updateCustomFrame, Qt::QueuedConnection);
+                break;
+            default:
+                break;
+        }
+    }
+    return QWidget::eventFilter(source, ev);
+}
+
+QIcon RibbonTitleBar::searchIcon() const
+{
+    // A magnifier drawn in the placeholder text color, so it matches the theme
+    const qreal ratio = devicePixelRatioF();
+    QPixmap pixmap(QSize(16, 16) * ratio);
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(palette().color(QPalette::PlaceholderText), 1.6, Qt::SolidLine, Qt::RoundCap));
+    painter.drawEllipse(QRectF(2.0, 2.0, 8.5, 8.5));
+    painter.drawLine(QPointF(9.5, 9.5), QPointF(14.0, 14.0));
+    painter.end();
+
+    return QIcon(pixmap);
+}
+
+#include "moc_RibbonTitleBar.cpp"

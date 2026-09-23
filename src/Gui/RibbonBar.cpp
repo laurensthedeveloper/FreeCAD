@@ -48,6 +48,7 @@
 #include <App/Application.h>
 
 #include "RibbonBar.h"
+#include "RibbonTitleBar.h"
 #include "Application.h"
 #include "BitmapFactory.h"
 #include "Command.h"
@@ -109,7 +110,7 @@ struct HomeSection
 const std::vector<HomeSection>& homeSections()
 {
     // The most used file and edit commands are in the quick access bar above the tabs,
-    // see quickAccessCommands()
+    // see RibbonTitleBar
     static const std::vector<HomeSection> sections {
         {QT_TRANSLATE_NOOP("Workbench", "Document"),
          {"Std_Import",
@@ -130,27 +131,6 @@ const std::vector<HomeSection>& homeSections()
          {"Std_OnlineHelp", "Std_WhatsThis", "Std_FreeCADForum", "Std_About"}},
     };
     return sections;
-}
-
-// File and edit commands in the title row, available on every tab
-const std::vector<const char*>& quickAccessCommands()
-{
-    static const std::vector<const char*> commands {
-        "Std_New",
-        "Std_Open",
-        "Std_Save",
-        "Std_Export",
-        "Separator",
-        "Std_Undo",
-        "Std_Redo",
-        "Std_Cut",
-        "Std_Copy",
-        "Std_Paste",
-        "Std_Delete",
-        "Separator",
-        "Std_Refresh",
-    };
-    return commands;
 }
 
 // Builds the button label shown under the icon from the command's menu text. The text is
@@ -365,8 +345,10 @@ RibbonBar::RibbonBar(QWidget* parent)
     setAttribute(Qt::WA_StyledBackground);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
+    // No outer margins, so that the title row reaches the edges of the window for its
+    // window buttons. The rows below have their own margins.
     auto layout = new QVBoxLayout(this);
-    layout->setContentsMargins(8, 6, 8, 8);
+    layout->setContentsMargins(0, 0, 0, 8);
     layout->setSpacing(0);
 
     _homeButton->setObjectName(QStringLiteral("RibbonHomeButton"));
@@ -378,16 +360,11 @@ RibbonBar::RibbonBar(QWidget* parent)
     _homeButton->setCheckable(true);
     connect(_homeButton, &QToolButton::clicked, this, &RibbonBar::setHomeActive);
 
-    // Title row: quick access to file and edit commands, command search and help
-    auto titleRow = new QHBoxLayout();
-    titleRow->setContentsMargins(0, 0, 0, 6);
-    titleRow->setSpacing(6);
-    setupQuickAccess(titleRow);
-    titleRow->addStretch();
-    setupSearchAndHelp(titleRow);
-    layout->addLayout(titleRow);
+    // Title row: quick access to file and edit commands, command search and help. On
+    // Windows it also replaces the title bar of the main window.
+    layout->addWidget(new RibbonTitleBar(this));
 
-    _tabRow->setContentsMargins(0, 0, 0, 0);
+    _tabRow->setContentsMargins(8, 0, 8, 0);
     _tabRow->setSpacing(6);
     _tabRow->addWidget(_homeButton, 0, Qt::AlignBottom);
     _tabRow->addStretch();
@@ -407,7 +384,10 @@ RibbonBar::RibbonBar(QWidget* parent)
     _scrollArea->setStyleSheet(QStringLiteral(
         "#RibbonScrollArea, #RibbonScrollArea > #qt_scrollarea_viewport { background: transparent; }"
     ));
-    layout->addWidget(_scrollArea);
+    auto panelRow = new QHBoxLayout();
+    panelRow->setContentsMargins(8, 0, 8, 0);
+    panelRow->addWidget(_scrollArea);
+    layout->addLayout(panelRow);
 
     // Scroll horizontally with the mouse wheel and follow size changes of the groups
     _scrollArea->viewport()->installEventFilter(this);
@@ -484,10 +464,18 @@ void RibbonBar::setupStyle()
              "  padding: 4px; background: transparent; }"
              "#RibbonSettingsButton:hover, #RibbonHelpButton:hover { background: %3; }"
              "#RibbonSettingsButton::menu-indicator { image: none; }"
-             "#RibbonQuickAccess { border: none; background: transparent; spacing: 2px; }"
-             "#RibbonQuickAccess QToolButton { border: none; border-radius: 6px; padding: 3px;"
+             "#RibbonQuickAccess { border: none; background: transparent; spacing: 1px; }"
+             "#RibbonQuickAccess QToolButton { border: none; border-radius: 5px; padding: 2px;"
              "  background: transparent; }"
              "#RibbonQuickAccess QToolButton:hover { background: %3; }"
+             "#RibbonWindowTitle { color: %7; }"
+             "#RibbonSearch { border: 1px solid rgba(128, 128, 128, 110); border-radius: 8px;"
+             "  padding: 3px 6px; background: %6; color: %7; }"
+             "#RibbonSearch:focus { border: 1px solid %5; }"
+             "QToolButton[windowButton=\"true\"] { border: none; border-radius: 0px;"
+             "  background: transparent; color: %7; }"
+             "QToolButton[windowButton=\"true\"]:hover { background: %3; }"
+             "#RibbonCloseButton:hover { background: #c42b1c; color: white; }"
          ))
             .arg(QLatin1String(c.bar),
                  QLatin1String(c.tab),
@@ -543,99 +531,6 @@ void RibbonBar::setupSettingsButton()
     });
 
     _tabRow->addWidget(button);
-}
-
-void RibbonBar::setupQuickAccess(QHBoxLayout* row)
-{
-    auto logo = new QLabel(this);
-    logo->setObjectName(QStringLiteral("RibbonLogo"));
-    logo->setPixmap(BitmapFactory().iconFromTheme("freecad").pixmap(QSize(22, 22)));
-    logo->setToolTip(QStringLiteral("FreeCAD"));
-    row->addWidget(logo);
-
-    // Small icon only buttons, the file and edit commands used on every tab
-    auto toolbar = new QToolBar(this);
-    toolbar->setObjectName(QStringLiteral("RibbonQuickAccess"));
-    toolbar->setIconSize(QSize(20, 20));
-    toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    toolbar->setMovable(false);
-
-    auto& commandManager = Application::Instance->commandManager();
-    for (const char* command : quickAccessCommands()) {
-        if (qstrcmp(command, "Separator") == 0) {
-            toolbar->addSeparator();
-        }
-        else if (commandManager.getCommandByName(command)) {
-            commandManager.addTo(command, toolbar);
-        }
-    }
-    row->addWidget(toolbar);
-}
-
-void RibbonBar::setupSearchAndHelp(QHBoxLayout* row)
-{
-    // Command search on the right of the tab row, like the command palette of other apps
-    auto search = new QLineEdit(this);
-    search->setObjectName(QStringLiteral("RibbonSearch"));
-    search->setPlaceholderText(tr("Search commands (Ctrl+K)"));
-    search->setToolTip(tr("Type at least three characters to find a command, "
-                          "press Enter to run it"));
-    search->setClearButtonEnabled(true);
-    search->setFixedWidth(280);
-    search->addAction(searchIcon(), QLineEdit::LeadingPosition);
-    // Rounded, with a neutral border that works on light and dark themes
-    search->setStyleSheet(QStringLiteral(
-        "#RibbonSearch { border: 1px solid rgba(128, 128, 128, 110); border-radius: 8px;"
-        "  padding: 4px 6px; }"
-        "#RibbonSearch:focus { border: 1px solid palette(highlight); }"
-    ));
-
-    auto completer = new CommandCompleter(search, search);
-    connect(completer, &CommandCompleter::commandActivated, this, [search](const QByteArray& name) {
-        search->clear();
-        search->clearFocus();
-        Application::Instance->commandManager().runCommandByName(name.constData());
-    });
-
-    auto shortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), this);
-    shortcut->setContext(Qt::WindowShortcut);
-    connect(shortcut, &QShortcut::activated, search, [search] {
-        search->setFocus(Qt::ShortcutFocusReason);
-        search->selectAll();
-    });
-
-    row->addWidget(search);
-
-    // Help, the same as Help > Help (F1)
-    auto help = new QToolButton(this);
-    help->setObjectName(QStringLiteral("RibbonHelpButton"));
-    help->setToolTip(tr("Opens the Help documentation"));
-    help->setIcon(BitmapFactory().iconFromTheme("help-browser"));
-    help->setIconSize(QSize(20, 20));
-    help->setAutoRaise(true);
-    connect(help, &QToolButton::clicked, this, [] {
-        Application::Instance->commandManager().runCommandByName("Std_OnlineHelp");
-    });
-    row->addWidget(help);
-}
-
-QIcon RibbonBar::searchIcon() const
-{
-    // A magnifier drawn in the text color, so it matches the theme
-    const qreal ratio = devicePixelRatioF();
-    QPixmap pixmap(QSize(16, 16) * ratio);
-    pixmap.setDevicePixelRatio(ratio);
-    pixmap.fill(Qt::transparent);
-
-    QColor color = palette().color(QPalette::PlaceholderText);
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    painter.setPen(QPen(color, 1.6, Qt::SolidLine, Qt::RoundCap));
-    painter.drawEllipse(QRectF(2.0, 2.0, 8.5, 8.5));
-    painter.drawLine(QPointF(9.5, 9.5), QPointF(14.0, 14.0));
-    painter.end();
-
-    return QIcon(pixmap);
 }
 
 bool RibbonBar::eventFilter(QObject* source, QEvent* ev)

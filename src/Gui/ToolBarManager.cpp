@@ -490,7 +490,12 @@ void ToolBarManager::setupRibbon()
     // above the dock widgets, like the regular toolbars do.
     auto mw = getMainWindow();
     auto host = new QToolBar(mw);
-    host->setObjectName(QStringLiteral("*RibbonHost"));
+    host->setObjectName(QStringLiteral("RibbonHost"));
+    // Without its own frame and padding, the ribbon fills the full width and top
+    host->setStyleSheet(QStringLiteral(
+        "#RibbonHost { border: none; padding: 0px; margin: 0px; spacing: 0px; }"
+    ));
+    host->layout()->setContentsMargins(0, 0, 0, 0);
     host->setMovable(false);
     host->setFloatable(false);
     host->setAllowedAreas(Qt::TopToolBarArea);
