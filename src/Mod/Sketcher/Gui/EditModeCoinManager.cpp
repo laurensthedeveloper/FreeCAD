@@ -1725,6 +1725,16 @@ void EditModeCoinManager::setOriginPointMarker(bool hollow)
 }
 
 
+void EditModeCoinManager::setCursorPosition(const SbVec2s& cursorPos)
+{
+    const SbVec2f position(cursorPos[0], cursorPos[1]);
+    for (auto pointSet : editModeScenegraphNodes.PointSet) {
+        if (pointSet->cursorPosition.getValue() != position) {
+            pointSet->cursorPosition = position;
+        }
+    }
+}
+
 void EditModeCoinManager::updateGeometryLayersConfiguration()
 {
     pEditModeGeometryCoinManager->updateGeometryLayersConfiguration();

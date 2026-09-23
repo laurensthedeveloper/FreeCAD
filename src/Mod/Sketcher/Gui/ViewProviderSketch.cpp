@@ -1790,6 +1790,9 @@ bool ViewProviderSketch::mouseMove(const SbVec2s& cursorPos, Gui::View3DInventor
         return false;
     }
 
+    // Points that are not shown all the time appear near the cursor
+    editCoinManager->setCursorPosition(cursorPos);
+
     // ignore small moves after selection
     switch (Mode) {
         case STATUS_SELECT_Point:

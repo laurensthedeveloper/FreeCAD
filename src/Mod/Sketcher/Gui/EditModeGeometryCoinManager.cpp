@@ -24,7 +24,9 @@
 
 #include <FCConfig.h>
 
+#include <algorithm>
 #include <memory>
+#include <vector>
 
 #include <Inventor/SbVec3f.h>
 #include <Inventor/nodes/SoCoordinate3.h>
@@ -175,6 +177,30 @@ void EditModeGeometryCoinManager::updateGeometryColor(
         return false;
     };
 
+    // Points that are always shown: standalone points, and end points that are not
+    // attached to other geometry. The others are only shown near the cursor.
+    auto isAlwaysShownPoint = [&](int GeoId, Sketcher::PointPos PosId) {
+        auto geom = geolistfacade.getGeometryFacadeFromGeoId(GeoId);
+        if (!geom) {
+            return false;
+        }
+        if (geom->getGeometry()->is<Part::GeomPoint>()) {
+            return !geom->isInternalAligned();
+        }
+        if (PosId != Sketcher::PointPos::start && PosId != Sketcher::PointPos::end) {
+            return false;
+        }
+        if (isCoincident(GeoId, PosId)) {
+            return false;
+        }
+        const std::vector<Sketcher::Constraint*>& constraints
+            = ViewProviderSketchCoinAttorney::getConstraints(viewProvider);
+        return std::ranges::none_of(constraints, [&](const Sketcher::Constraint* constr) {
+            return constr->Type == PointOnObject && constr->First == GeoId
+                && constr->FirstPos == PosId;
+        });
+    };
+
     auto isInternalAlignedGeom = [&geolistfacade](int GeoId) {
         auto geom = geolistfacade.getGeometryFacadeFromGeoId(GeoId);
         if (geom) {
@@ -237,6 +263,9 @@ void EditModeGeometryCoinManager::updateGeometryColor(
         SbColor* pcolor = editModeScenegraphNodes.PointsMaterials[l]->diffuseColor.startEditing();
         SbVec3f* pverts = editModeScenegraphNodes.PointsCoordinate[l]->point.startEditing();
 
+        // points shown also away from the cursor
+        std::vector<SbBool> shownPoints(PtNum, FALSE);
+
         // colors of the point set
         for (int i = 0; i < PtNum; i++) {
             if (!coinMapping.isValidPointId(i, l)) {
@@ -246,6 +275,7 @@ void EditModeGeometryCoinManager::updateGeometryColor(
             int GeoId = coinMapping.getPointGeoId(i, l);
             Sketcher::PointPos PosId = coinMapping.getPointPosId(i, l);
             bool isExternal = GeoId < -1;
+            shownPoints[i] = isAlwaysShownPoint(GeoId, PosId);
 
             if (isExternal) {
                 if (isCoincident(GeoId, PosId) && !issketchinvalid) {
@@ -413,6 +443,7 @@ void EditModeGeometryCoinManager::updateGeometryColor(
              preselectpointmfid,
              layerId = l,
              &coinMapping = coinMapping,
+             &shownPoints,
              drawingParameters = this->drawingParameters,
              raisePoint,
              viewOrientationFactor](const int i) {
@@ -429,6 +460,7 @@ void EditModeGeometryCoinManager::updateGeometryColor(
                     pcolor[pointindex.fieldIndex] = (preselectpointmfid == pointindex)
                         ? drawingParameters.PreselectSelectedColor
                         : drawingParameters.SelectColor;
+                    shownPoints[pointindex.fieldIndex] = TRUE;
 
                     raisePoint(
                         pverts[pointindex.fieldIndex],
@@ -443,6 +475,12 @@ void EditModeGeometryCoinManager::updateGeometryColor(
         if (pointSet->highlightIndex.getValue() != highlightedPoint) {
             pointSet->highlightIndex = highlightedPoint;
         }
+
+        // Only open ends, standalone and selected points are always shown, the other
+        // points appear when the cursor comes near them
+        pointSet->revealNearCursor = TRUE;
+        pointSet->alwaysVisible.setNum(PtNum);
+        pointSet->alwaysVisible.setValues(0, PtNum, shownPoints.data());
 
         // update colors and rendering height of the curves
 

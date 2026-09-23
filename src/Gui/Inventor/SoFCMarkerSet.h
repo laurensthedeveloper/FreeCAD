@@ -21,7 +21,10 @@
 
 #pragma once
 
+#include <Inventor/fields/SoMFBool.h>
+#include <Inventor/fields/SoSFBool.h>
 #include <Inventor/fields/SoSFColor.h>
+#include <Inventor/fields/SoSFVec2f.h>
 #include <Inventor/fields/SoSFFloat.h>
 #include <Inventor/fields/SoSFInt32.h>
 #include <Inventor/nodes/SoMarkerSet.h>
@@ -53,6 +56,14 @@ public:
     SoSFColor fillColor;       //!< inside of the dots, the ring has the color of the point
     SoSFFloat ringWidth;       //!< in pixels
     SoSFInt32 highlightIndex;  //!< point drawn highlighted, counted from startIndex, -1 for none
+
+    /** With revealNearCursor, only the points with alwaysVisible set and the highlighted
+     *  point are always drawn. The others fade in when the cursor, in viewport pixels,
+     *  comes within revealRadius pixels of them. */
+    SoSFBool revealNearCursor;
+    SoMFBool alwaysVisible;
+    SoSFVec2f cursorPosition;
+    SoSFFloat revealRadius;
 
     void GLRender(SoGLRenderAction* action) override;
 

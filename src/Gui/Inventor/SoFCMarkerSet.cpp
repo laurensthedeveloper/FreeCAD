@@ -130,6 +130,10 @@ SoFCMarkerSet::SoFCMarkerSet()
     SO_NODE_ADD_FIELD(fillColor, (SbColor(1.0F, 1.0F, 1.0F)));
     SO_NODE_ADD_FIELD(ringWidth, (1.75F));
     SO_NODE_ADD_FIELD(highlightIndex, (-1));
+    SO_NODE_ADD_FIELD(revealNearCursor, (FALSE));
+    SO_NODE_ADD_FIELD(alwaysVisible, (TRUE));
+    SO_NODE_ADD_FIELD(cursorPosition, (SbVec2f(-1.0e6F, -1.0e6F)));
+    SO_NODE_ADD_FIELD(revealRadius, (60.0F));
 }
 
 SoFCMarkerSet::~SoFCMarkerSet() = default;
@@ -201,6 +205,20 @@ void SoFCMarkerSet::GLRender(SoGLRenderAction* action)
         point[1] = (point[1] + 1.0F) * 0.5F * viewportSize[1];
         point[2] = -point[2];
 
+        const bool highlighted = i == highlightIndex.getValue();
+        float reveal = 1.0F;
+        const bool alwaysShown = i < alwaysVisible.getNum() && alwaysVisible[i];
+        if (revealNearCursor.getValue() && !highlighted && !alwaysShown) {
+            // Fades in smoothly as the cursor approaches
+            const SbVec2f offset = SbVec2f(point[0], point[1]) - cursorPosition.getValue();
+            const float radius = std::max(revealRadius.getValue(), 1.0F);
+            const float t = 1.0F - offset.length() / radius;
+            if (t <= 0.0F) {
+                continue;
+            }
+            reveal = t * t * (3.0F - 2.0F * t);
+        }
+
         // The size of the bitmap is the size of the dot, so that it matches picking
         SbVec2s size;
         const unsigned char* bytes = nullptr;
@@ -212,9 +230,9 @@ void SoFCMarkerSet::GLRender(SoGLRenderAction* action)
         dot.position = point;
         dot.radius = static_cast<float>(size[0]) / 2.0F + 0.5F;
         dot.color = SoLazyElement::getDiffuse(state, std::min(material, numColors - 1));
-        dot.alpha = 1.0F
-            - SoLazyElement::getTransparency(state, std::min(material, numTransparencies - 1));
-        dot.highlighted = i == highlightIndex.getValue();
+        dot.alpha = reveal
+            * (1.0F - SoLazyElement::getTransparency(state, std::min(material, numTransparencies - 1)));
+        dot.highlighted = highlighted;
         dots.push_back(dot);
     }
 

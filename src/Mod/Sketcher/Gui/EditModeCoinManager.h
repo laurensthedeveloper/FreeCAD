@@ -323,6 +323,9 @@ public:
     /// Use an outline origin marker while a drawing tool is active.
     void setOriginPointMarker(bool hollow);
 
+    /// The points of the geometry near this position, in viewport pixels, are shown
+    void setCursorPosition(const SbVec2s& cursorPos);
+
     // Updates the Axes extension to span the specified area.
     void updateAxesLength(const Base::BoundBox2d& bb);
 
