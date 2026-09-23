@@ -24,9 +24,13 @@
 #pragma once
 
 #include <memory>
+#include <utility>
+#include <vector>
 
+#include <QPointer>
 #include <QWidget>
 
+class QAction;
 class QHBoxLayout;
 class QIcon;
 class QLabel;
@@ -67,6 +71,7 @@ private:
     QMenuBar* menuBar() const;
     void placeInMenuBar();
     void setupQuickAccess(QHBoxLayout* layout);
+    void updateQuickAccessIcons();
     void setupSearchAndHelp(QHBoxLayout* layout);
     void setupWindowButtons(QHBoxLayout* layout);
     void enableCustomFrame();
@@ -74,6 +79,9 @@ private:
     void updateWindowButtons();
     QIcon searchIcon() const;
 
+    static constexpr int quickIconSize = 12;
+
+    std::vector<std::pair<QPointer<QToolButton>, QPointer<QAction>>> _quickButtons;
     QWidget* _leftPart = nullptr;
     QWidget* _rightPart = nullptr;
     QLabel* _logo;

@@ -27,6 +27,7 @@
 #include <QApplication>
 #include <QEvent>
 #include <QFontDatabase>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -42,6 +43,7 @@
 #include <App/Application.h>
 
 #include "RibbonTitleBar.h"
+#include "Action.h"
 #include "Application.h"
 #include "BitmapFactory.h"
 #include "Command.h"
@@ -76,6 +78,34 @@ const std::vector<const char*> quickAccessCommands {
     "Separator",
     "Std_Refresh",
 };
+
+// Line icons of the Windows icon font for the quick access commands. They are clearly
+// distinguishable at a small size, unlike the filled shapes of the command icons.
+const std::map<std::string, char16_t> quickAccessGlyphs {
+    {"Std_New", 0xE8A5},      // Document
+    {"Std_Open", 0xE8E5},     // OpenFile
+    {"Std_Save", 0xE74E},     // Save
+    {"Std_Export", 0xE898},   // Upload
+    {"Std_Undo", 0xE7A7},     // Undo
+    {"Std_Redo", 0xE7A6},     // Redo
+    {"Std_Cut", 0xE8C6},      // Cut
+    {"Std_Copy", 0xE8C8},     // Copy
+    {"Std_Paste", 0xE77F},    // Paste
+    {"Std_Delete", 0xE74D},   // Delete
+    {"Std_Refresh", 0xE72C},  // Refresh
+};
+
+// The icon font of Windows 11, or of Windows 10, or an empty string if there is none
+QString iconFontFamily()
+{
+    const QStringList families = QFontDatabase::families();
+    for (const QString& family : {QStringLiteral("Segoe Fluent Icons"), QStringLiteral("Segoe MDL2 Assets")}) {
+        if (families.contains(family)) {
+            return family;
+        }
+    }
+    return {};
+}
 
 bool customFrameEnabled()
 {
@@ -235,6 +265,11 @@ RibbonTitleBar::RibbonTitleBar(QWidget* parent)
     }
 
     placeInMenuBar();
+    if (QMenuBar* bar = menuBar()) {
+        bar->installEventFilter(this);
+    }
+    // Once the theme is fully applied, which is only when the main window is shown
+    QMetaObject::invokeMethod(this, &RibbonTitleBar::updateQuickAccessIcons, Qt::QueuedConnection);
 }
 
 QMenuBar* RibbonTitleBar::menuBar() const
@@ -293,23 +328,86 @@ RibbonTitleBar::~RibbonTitleBar()
 
 void RibbonTitleBar::setupQuickAccess(QHBoxLayout* layout)
 {
-    // Small icon only buttons, the file and edit commands used on every tab
-    auto toolbar = new QToolBar(this);
-    toolbar->setObjectName(QStringLiteral("RibbonQuickAccess"));
-    toolbar->setIconSize(QSize(14, 14));
-    toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    toolbar->setMovable(false);
+    // Small monochrome buttons for the file and edit commands used on every tab. They
+    // are own buttons rather than the actions of the commands, as those carry the
+    // colored icons. A click triggers the action of the command, and its enabled state
+    // and tool tip are followed.
+    auto container = new QWidget(this);
+    container->setObjectName(QStringLiteral("RibbonQuickAccess"));
+    auto row = new QHBoxLayout(container);
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(0);
 
     auto& commandManager = Application::Instance->commandManager();
-    for (const char* command : quickAccessCommands) {
-        if (qstrcmp(command, "Separator") == 0) {
-            toolbar->addSeparator();
+    for (const char* name : quickAccessCommands) {
+        if (qstrcmp(name, "Separator") == 0) {
+            auto line = new QFrame(container);
+            line->setObjectName(QStringLiteral("RibbonQuickAccessSeparator"));
+            line->setFixedSize(1, 14);
+            row->addSpacing(4);
+            row->addWidget(line);
+            row->addSpacing(4);
+            continue;
         }
-        else if (commandManager.getCommandByName(command)) {
-            commandManager.addTo(command, toolbar);
+
+        Command* command = commandManager.getCommandByName(name);
+        if (!command) {
+            continue;
+        }
+        command->initAction();
+        QAction* action = command->getAction() ? command->getAction()->action() : nullptr;
+        if (!action) {
+            continue;
+        }
+
+        auto button = new QToolButton(container);
+        button->setObjectName(QStringLiteral("RibbonQuickAccessButton"));
+        button->setIconSize(QSize(quickIconSize, quickIconSize));
+        button->setFixedSize(22, 22);
+        button->setToolTip(action->toolTip());
+        button->setEnabled(action->isEnabled());
+        connect(button, &QToolButton::clicked, action, &QAction::trigger);
+        connect(action, &QAction::changed, button, [button, action] {
+            button->setEnabled(action->isEnabled());
+            button->setToolTip(action->toolTip());
+        });
+        row->addWidget(button);
+        _quickButtons.push_back({button, action, name});
+    }
+
+    layout->addWidget(container);
+    updateQuickAccessIcons();
+}
+
+void RibbonTitleBar::updateQuickAccessIcons()
+{
+    // One color for all icons, the text color of the title row: dark on a light theme
+    // and light on a dark one. The palette of the menu bar follows the style sheet.
+    QColor color(0x1f, 0x23, 0x28);
+    if (QMenuBar* bar = menuBar()) {
+        bar->ensurePolished();
+        if (bar->palette().color(bar->backgroundRole()).lightness() < 128) {
+            color = QColor(0xe6, 0xe8, 0xeb);
         }
     }
-    layout->addWidget(toolbar);
+
+    const qreal ratio = devicePixelRatioF();
+    for (const auto& [button, action] : _quickButtons) {
+        if (!button || !action) {
+            continue;
+        }
+        // Keep only the shape of the icon and fill it with the color
+        QPixmap shape = action->icon().pixmap(QSize(quickIconSize, quickIconSize), ratio);
+        QPixmap pixmap(shape.size());
+        pixmap.setDevicePixelRatio(shape.devicePixelRatio());
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.drawPixmap(0, 0, shape);
+        painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+        painter.fillRect(pixmap.rect(), color);
+        painter.end();
+        button->setIcon(QIcon(pixmap));
+    }
 }
 
 void RibbonTitleBar::setupSearchAndHelp(QHBoxLayout* layout)
@@ -354,10 +452,7 @@ void RibbonTitleBar::setupSearchAndHelp(QHBoxLayout* layout)
 void RibbonTitleBar::setupWindowButtons(QHBoxLayout* layout)
 {
     // The glyphs of the Windows caption buttons, from the icon font of Windows 11 or 10
-    const QStringList families = QFontDatabase::families();
-    QFont font(families.contains(QStringLiteral("Segoe Fluent Icons"))
-                   ? QStringLiteral("Segoe Fluent Icons")
-                   : QStringLiteral("Segoe MDL2 Assets"));
+    QFont font(iconFontFamily());
     font.setPointSizeF(7.5);
 
     _windowButtons = new QWidget(this);
@@ -483,6 +578,10 @@ bool RibbonTitleBar::eventFilter(QObject* source, QEvent* ev)
     if (source == window() && ev->type() == QEvent::WindowStateChange) {
         // Queued, as the frame must not change from within this event
         QMetaObject::invokeMethod(this, &RibbonTitleBar::updateCustomFrame, Qt::QueuedConnection);
+    }
+    // The theme may have changed between light and dark
+    if (source == menuBar() && ev->type() == QEvent::PaletteChange) {
+        QMetaObject::invokeMethod(this, &RibbonTitleBar::updateQuickAccessIcons, Qt::QueuedConnection);
     }
     return QWidget::eventFilter(source, ev);
 }
