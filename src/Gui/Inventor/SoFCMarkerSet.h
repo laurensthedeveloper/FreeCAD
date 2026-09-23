@@ -31,9 +31,10 @@ namespace Gui
 {
 
 /**
- * A marker set that draws filled circle markers as smooth round dots with an outline,
- * in the color of the points. One point can be highlighted, for example while it is
- * preselected: it is drawn larger and with a soft halo around it.
+ * A marker set that draws filled circle markers as smooth round dots: a light fill
+ * inside a ring in the color of the point, with a faint shadow. One point can be
+ * highlighted, for example while it is preselected: it is drawn larger and with a soft
+ * halo in its color around it.
  *
  * Markers other than the filled circles of MarkerBitmaps are drawn as in SoMarkerSet.
  * Picking is the same as in SoMarkerSet.
@@ -49,9 +50,8 @@ public:
     static void finish();
     SoFCMarkerSet();
 
-    SoSFColor outlineColor;
-    SoSFFloat outlineWidth;  //!< in pixels
-    SoSFColor haloColor;
+    SoSFColor fillColor;       //!< inside of the dots, the ring has the color of the point
+    SoSFFloat ringWidth;       //!< in pixels
     SoSFInt32 highlightIndex;  //!< point drawn highlighted, counted from startIndex, -1 for none
 
     void GLRender(SoGLRenderAction* action) override;

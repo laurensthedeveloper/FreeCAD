@@ -59,14 +59,17 @@ using namespace Gui;
 namespace
 {
 // A highlighted point is drawn this much larger, with a halo of this size around it
-constexpr float highlightScale = 1.3F;
-constexpr float haloScale = 2.1F;
-constexpr float haloAlpha = 0.35F;
+constexpr float highlightScale = 1.25F;
+constexpr float haloScale = 2.0F;
+constexpr float haloAlpha = 0.25F;
+// A faint shadow below the dot, offset downwards, so that it lifts off the background
+constexpr float shadowAlpha = 0.18F;
+constexpr float shadowOffset = 1.0F;
 
 struct Dot
 {
     SbVec3f position;  // in window coordinates, with the depth as in SoMarkerSet
-    float radius;      // of the fill
+    float radius;      // of the whole dot, including the ring
     SbColor color;
     float alpha;
     bool highlighted;
@@ -124,9 +127,8 @@ void SoFCMarkerSet::finish()
 SoFCMarkerSet::SoFCMarkerSet()
 {
     SO_NODE_CONSTRUCTOR(SoFCMarkerSet);
-    SO_NODE_ADD_FIELD(outlineColor, (SbColor(0.16F, 0.18F, 0.21F)));
-    SO_NODE_ADD_FIELD(outlineWidth, (2.0F));
-    SO_NODE_ADD_FIELD(haloColor, (SbColor(0.62F, 0.66F, 0.72F)));
+    SO_NODE_ADD_FIELD(fillColor, (SbColor(1.0F, 1.0F, 1.0F)));
+    SO_NODE_ADD_FIELD(ringWidth, (1.75F));
     SO_NODE_ADD_FIELD(highlightIndex, (-1));
 }
 
@@ -208,7 +210,7 @@ void SoFCMarkerSet::GLRender(SoGLRenderAction* action)
         const int material = perVertex ? i : 0;
         Dot dot;
         dot.position = point;
-        dot.radius = static_cast<float>(size[0]) / 2.0F;
+        dot.radius = static_cast<float>(size[0]) / 2.0F + 0.5F;
         dot.color = SoLazyElement::getDiffuse(state, std::min(material, numColors - 1));
         dot.alpha = 1.0F
             - SoLazyElement::getTransparency(state, std::min(material, numTransparencies - 1));
@@ -230,7 +232,7 @@ void SoFCMarkerSet::GLRender(SoGLRenderAction* action)
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    // The fill is drawn at the same depth as the outline below it
+    // The fill is drawn at the same depth as the ring below it
     glDepthFunc(GL_LEQUAL);
 
     glMatrixMode(GL_MODELVIEW);
@@ -241,21 +243,28 @@ void SoFCMarkerSet::GLRender(SoGLRenderAction* action)
     glLoadIdentity();
     glOrtho(0, viewportSize[0], 0, viewportSize[1], -1.0F, 1.0F);
 
-    const SbColor& outline = outlineColor.getValue();
-    const float width = std::max(outlineWidth.getValue(), 0.0F);
+    const SbColor& fill = fillColor.getValue();
+    const SbColor shadow(0.0F, 0.0F, 0.0F);
+    const float ring = std::max(ringWidth.getValue(), 0.0F);
     for (const Dot& dot : dots) {
         const float radius = dot.highlighted ? dot.radius * highlightScale : dot.radius;
+
+        // The halo and the shadow are soft and must not hide what is behind them
+        GLboolean depthMask = GL_TRUE;
+        glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+        glDepthMask(GL_FALSE);
         if (dot.highlighted) {
-            GLboolean depthMask = GL_TRUE;
-            glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
-            glDepthMask(GL_FALSE);
-            drawDisk(dot.position, (radius + width) * haloScale, haloColor.getValue(), haloAlpha * dot.alpha, 3.0F);
-            glDepthMask(depthMask);
+            drawDisk(dot.position, radius * haloScale, dot.color, haloAlpha * dot.alpha, radius);
         }
-        if (width > 0.0F) {
-            drawDisk(dot.position, radius + width, outline, dot.alpha, 1.0F);
-        }
+        SbVec3f shadowPosition = dot.position;
+        shadowPosition[1] -= shadowOffset;
+        drawDisk(shadowPosition, radius + 0.5F, shadow, shadowAlpha * dot.alpha, 2.0F);
+        glDepthMask(depthMask);
+
         drawDisk(dot.position, radius, dot.color, dot.alpha, 1.0F);
+        if (radius - ring > 0.5F) {
+            drawDisk(dot.position, radius - ring, fill, dot.alpha, 1.0F);
+        }
     }
 
     glMatrixMode(GL_PROJECTION);
