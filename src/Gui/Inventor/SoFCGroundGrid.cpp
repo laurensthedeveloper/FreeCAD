@@ -19,6 +19,17 @@
  *                                                                            *
  ******************************************************************************/
 
+#include <FCConfig.h>
+
+#ifdef FC_OS_WIN32
+# include <Windows.h>
+#endif
+#ifdef FC_OS_MACOSX
+# include <OpenGL/gl.h>
+#else
+# include <GL/gl.h>
+#endif
+
 #include <Inventor/SbLine.h>
 #include <Inventor/SbPlane.h>
 #include <Inventor/SbViewVolume.h>
@@ -41,6 +52,10 @@
 #include <vector>
 
 #include "SoFCGroundGrid.h"
+
+#ifndef GL_DEPTH_CLAMP
+# define GL_DEPTH_CLAMP 0x864F
+#endif
 
 
 using namespace Gui;
@@ -108,6 +123,14 @@ SoFCGroundGrid::SoFCGroundGrid()
     transparencyType->value = SoTransparencyType::BLEND;
     addChild(transparencyType);
 
+    // The grid is an underlay: it is drawn before the scene, and without depth, so that
+    // everything else is drawn over it. Otherwise it would cut through flat markers, such
+    // as the points of sketches, and flicker with faces on the ground.
+    auto depthBuffer = new SoDepthBuffer;
+    depthBuffer->test = FALSE;
+    depthBuffer->write = FALSE;
+    addChild(depthBuffer);
+
     auto lightModel = new SoLightModel;
     lightModel->model = SoLightModel::BASE_COLOR;
     addChild(lightModel);
@@ -116,18 +139,13 @@ SoFCGroundGrid::SoFCGroundGrid()
     pickStyle->style = SoPickStyle::UNPICKABLE;
     addChild(pickStyle);
 
-    // A soft light spot on the ground below the grid lines. It does not write the depth
-    // buffer, so it never hides the grid or the objects.
+    // A soft light spot on the ground below the grid lines
     auto glowSeparator = new SoSeparator;
     // Its scale changes without notification, so a cached bounding box would be outdated
     // and the spot culled as soon as that box leaves the view
     glowSeparator->renderCaching = SoSeparator::OFF;
     glowSeparator->boundingBoxCaching = SoSeparator::OFF;
     glowSeparator->renderCulling = SoSeparator::OFF;
-    auto glowDepth = new SoDepthBuffer;
-    glowDepth->write = FALSE;
-    glowDepth->function = SoDepthBuffer::LESS;
-    glowSeparator->addChild(glowDepth);
     glowTransform = new SoTransform;
     glowSeparator->addChild(glowTransform);
     glowVertices = new SoVertexProperty;
@@ -190,16 +208,51 @@ SoFCGroundGrid::SoFCGroundGrid()
 
 SoFCGroundGrid::~SoFCGroundGrid() = default;
 
+namespace
+{
+// The near and far planes follow the objects only, as the grid is not part of the
+// bounding box of the scene. So the grid must not be clipped by them.
+class DepthClamp
+{
+public:
+    DepthClamp()
+        : wasEnabled(glIsEnabled(GL_DEPTH_CLAMP))
+    {
+        glEnable(GL_DEPTH_CLAMP);
+    }
+    ~DepthClamp()
+    {
+        if (!wasEnabled) {
+            glDisable(GL_DEPTH_CLAMP);
+        }
+    }
+    DepthClamp(const DepthClamp&) = delete;
+    DepthClamp& operator=(const DepthClamp&) = delete;
+
+private:
+    GLboolean wasEnabled;
+};
+}  // namespace
+
 void SoFCGroundGrid::GLRenderBelowPath(SoGLRenderAction* action)
 {
     updateGeometry(action->getState());
+    DepthClamp clamp;
     inherited::GLRenderBelowPath(action);
 }
 
 void SoFCGroundGrid::GLRenderInPath(SoGLRenderAction* action)
 {
     updateGeometry(action->getState());
+    DepthClamp clamp;
     inherited::GLRenderInPath(action);
+}
+
+void SoFCGroundGrid::getBoundingBox(SoGetBoundingBoxAction* /*action*/)
+{
+    // Not part of the bounding box: neither when fitting the view, nor for the near and
+    // far planes. The grid extends far beyond the objects, which would make the depth
+    // range too coarse, and its position depends on the view, which would feed back.
 }
 
 void SoFCGroundGrid::updateGeometry(SoState* state)
@@ -207,25 +260,33 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
     SoCacheElement::invalidate(state);
 
     // The grid is centered where the view direction meets the ground. For a view along
-    // the ground, or when looking away from it, the point of the ground below the
-    // center of the view is taken instead.
+    // the ground, or when looking away from it, the point of the view direction nearest
+    // to the origin is taken instead, dropped onto the ground. This must not depend on
+    // the near and far planes, which change with every frame while navigating.
     const SbViewVolume& volume = SoViewVolumeElement::get(state);
     SbLine viewLine;
     volume.projectPointToLine(SbVec2f(0.5F, 0.5F), viewLine);
+    const SbVec3f position = viewLine.getPosition();
     const SbVec3f direction = viewLine.getDirection();
     const SbPlane ground(SbVec3f(0.0F, 0.0F, 1.0F), 0.0F);
 
     SbVec3f center;
-    const bool hitsGround = std::fabs(direction[2]) > 0.05F && ground.intersect(viewLine, center)
-        && (center - viewLine.getPosition()).dot(direction) > 0.0F;
+    const bool hitsGround = std::fabs(direction[2]) > 0.15F && ground.intersect(viewLine, center)
+        && (center - position).dot(direction) > 0.0F;
     if (!hitsGround) {
-        center = viewLine.getPosition()
-            + direction * (volume.getNearDist() + volume.getDepth() / 2.0F);
+        float distance = (SbVec3f(0.0F, 0.0F, 0.0F) - position).dot(direction);
+        if (volume.getProjectionType() == SbViewVolume::PERSPECTIVE) {
+            // In front of the camera, at least as far as the camera is above the ground.
+            // Not for an orthographic view, where the line starts at the near plane.
+            distance = std::max(distance, std::max(std::fabs(position[2]), 1.0e-3F));
+        }
+        center = position + direction * distance;
         center[2] = 0.0F;
     }
 
     const float viewSize = volume.getWorldToScreenScale(center, 1.0F);
-    if (!std::isfinite(viewSize) || viewSize <= 0.0F) {
+    if (!std::isfinite(center[0]) || !std::isfinite(center[1]) || !std::isfinite(viewSize)
+        || viewSize <= 1.0e-6F) {
         return;
     }
 

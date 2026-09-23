@@ -2255,10 +2255,13 @@ void View3DInventorViewer::setGroundGrid(bool on)
     if (on && !groundGridGroup) {
         groundGrid = new SoFCGroundGrid;
 
-        // Not part of the bounding box when fitting the view, only when clipping
+        // The grid itself is not part of any bounding box, the group keeps it out of
+        // the actions that respect SoSkipBoundingGroup as well
         groundGridGroup = new SoSkipBoundingGroup;
+        static_cast<SoSkipBoundingGroup*>(groundGridGroup)->mode = SoSkipBoundingGroup::EXCLUDE_BBOX;
         groundGridGroup->addChild(groundGrid);
-        sep->addChild(groundGridGroup);
+        // First, so that it is drawn below everything else
+        sep->insertChild(groundGridGroup, 0);
         updateGroundGridColors();
     }
     else if (!on && groundGridGroup) {

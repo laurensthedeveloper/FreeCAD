@@ -58,6 +58,7 @@ public:
 
     void GLRenderBelowPath(SoGLRenderAction* action) override;
     void GLRenderInPath(SoGLRenderAction* action) override;
+    void getBoundingBox(SoGetBoundingBoxAction* action) override;
 
 protected:
     ~SoFCGroundGrid() override;
