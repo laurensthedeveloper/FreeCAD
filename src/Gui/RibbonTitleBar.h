@@ -77,12 +77,14 @@ private:
     void enableCustomFrame();
     void updateCustomFrame();
     void updateWindowButtons();
-    QIcon searchIcon() const;
 
     static constexpr int quickIconSize = 13;
+    static constexpr int lineIconSize = 16;
 
     static QIcon glyphIcon(const QString& family, QChar glyph, const QColor& color, qreal ratio);
     static QIcon grayIcon(const QIcon& icon, const QColor& color, qreal ratio);
+    static QIcon searchIcon(const QColor& color, qreal ratio);
+    static QIcon helpIcon(const QColor& color, qreal ratio);
 
     struct QuickButton
     {
@@ -95,6 +97,8 @@ private:
     QWidget* _rightPart = nullptr;
     QLabel* _logo;
     QWidget* _windowButtons = nullptr;
+    QAction* _searchAction = nullptr;
+    QToolButton* _helpButton = nullptr;
     QToolButton* _maximizeButton = nullptr;
     bool _customFrame = false;
 

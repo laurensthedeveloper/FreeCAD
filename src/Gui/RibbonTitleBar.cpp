@@ -407,6 +407,17 @@ void RibbonTitleBar::updateQuickAccessIcons()
             item.button->setIcon(grayIcon(item.action->icon(), color, ratio));
         }
     }
+
+    // The search and help icons are drawn as lines in the same color, the magnifier
+    // a bit lighter like the placeholder text next to it
+    if (_searchAction) {
+        QColor muted = color;
+        muted.setAlpha(150);
+        _searchAction->setIcon(searchIcon(muted, ratio));
+    }
+    if (_helpButton) {
+        _helpButton->setIcon(helpIcon(color, ratio));
+    }
 }
 
 QIcon RibbonTitleBar::glyphIcon(const QString& family, QChar glyph, const QColor& color, qreal ratio)
@@ -454,12 +465,12 @@ void RibbonTitleBar::setupSearchAndHelp(QHBoxLayout* layout)
     // Command search, like the command palette of other applications
     auto search = new QLineEdit(this);
     search->setObjectName(QStringLiteral("RibbonSearch"));
-    search->setPlaceholderText(tr("Search commands (Ctrl+K)"));
+    search->setPlaceholderText(tr("Search (Ctrl+K)"));
     search->setToolTip(tr("Type at least three characters to find a command, "
                           "press Enter to run it"));
     search->setClearButtonEnabled(true);
-    search->setFixedWidth(200);
-    search->addAction(searchIcon(), QLineEdit::LeadingPosition);
+    search->setFixedWidth(180);
+    _searchAction = search->addAction(QIcon(), QLineEdit::LeadingPosition);
 
     auto completer = new CommandCompleter(search, search);
     connect(completer, &CommandCompleter::commandActivated, this, [search](const QByteArray& name) {
@@ -480,8 +491,8 @@ void RibbonTitleBar::setupSearchAndHelp(QHBoxLayout* layout)
     auto help = new QToolButton(this);
     help->setObjectName(QStringLiteral("RibbonHelpButton"));
     help->setToolTip(tr("Opens the Help documentation"));
-    help->setIcon(BitmapFactory().iconFromTheme("help-browser"));
-    help->setIconSize(QSize(18, 18));
+    help->setIconSize(QSize(lineIconSize, lineIconSize));
+    _helpButton = help;
     connect(help, &QToolButton::clicked, this, [] {
         Application::Instance->commandManager().runCommandByName("Std_OnlineHelp");
     });
@@ -625,19 +636,43 @@ bool RibbonTitleBar::eventFilter(QObject* source, QEvent* ev)
     return QWidget::eventFilter(source, ev);
 }
 
-QIcon RibbonTitleBar::searchIcon() const
+QIcon RibbonTitleBar::searchIcon(const QColor& color, qreal ratio)
 {
-    // A magnifier drawn in the placeholder text color, so it matches the theme
-    const qreal ratio = devicePixelRatioF();
-    QPixmap pixmap(QSize(16, 16) * ratio);
+    // A magnifier
+    QPixmap pixmap(QSize(14, 14) * ratio);
     pixmap.setDevicePixelRatio(ratio);
     pixmap.fill(Qt::transparent);
 
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.setPen(QPen(palette().color(QPalette::PlaceholderText), 1.6, Qt::SolidLine, Qt::RoundCap));
-    painter.drawEllipse(QRectF(2.0, 2.0, 8.5, 8.5));
-    painter.drawLine(QPointF(9.5, 9.5), QPointF(14.0, 14.0));
+    painter.setPen(QPen(color, 1.4, Qt::SolidLine, Qt::RoundCap));
+    painter.drawEllipse(QRectF(1.5, 1.5, 8.0, 8.0));
+    painter.drawLine(QPointF(8.6, 8.6), QPointF(12.5, 12.5));
+    painter.end();
+
+    return QIcon(pixmap);
+}
+
+QIcon RibbonTitleBar::helpIcon(const QColor& color, qreal ratio)
+{
+    // A question mark in a circle
+    const int size = lineIconSize;
+    QPixmap pixmap(QSize(size, size) * ratio);
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::TextAntialiasing);
+    painter.setPen(QPen(color, 1.3));
+    const QRectF circle(1.0, 1.0, size - 2.0, size - 2.0);
+    painter.drawEllipse(circle);
+
+    QFont font = QApplication::font();
+    font.setPixelSize(size - 6);
+    font.setBold(true);
+    painter.setFont(font);
+    painter.drawText(circle, Qt::AlignCenter, QStringLiteral("?"));
     painter.end();
 
     return QIcon(pixmap);
