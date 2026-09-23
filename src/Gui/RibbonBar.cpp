@@ -21,6 +21,7 @@
  *                                                                          *
  ***************************************************************************/
 
+#include <algorithm>
 #include <vector>
 
 #include <QActionEvent>
@@ -39,14 +40,19 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QLineEdit>
+#include <QMenuBar>
 #include <QShortcut>
+#include <QStyleOption>
 #include <QWidgetAction>
+
+#include <App/Application.h>
 
 #include "RibbonBar.h"
 #include "Application.h"
 #include "BitmapFactory.h"
 #include "Command.h"
 #include "CommandCompleter.h"
+#include "MainWindow.h"
 #include "WorkbenchManager.h"
 
 using namespace Gui;
@@ -346,26 +352,28 @@ RibbonBar::RibbonBar(QWidget* parent)
     , _scrollArea(new QScrollArea(this))
 {
     setObjectName(QStringLiteral("RibbonBar"));
+    setAttribute(Qt::WA_StyledBackground);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     auto layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(8, 6, 8, 8);
     layout->setSpacing(0);
 
     _homeButton->setObjectName(QStringLiteral("RibbonHomeButton"));
     _homeButton->setText(tr("Home"));
     _homeButton->setToolTip(tr("Shows the general commands, such as file and edit commands"));
     _homeButton->setIcon(BitmapFactory().iconFromTheme("Std_ViewHome"));
-    _homeButton->setIconSize(QSize(16, 16));  // same as the workbench tabs
+    _homeButton->setIconSize(QSize(tabIconSize, tabIconSize));  // same as the workbench tabs
     _homeButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     _homeButton->setCheckable(true);
-    _homeButton->setAutoRaise(true);
     connect(_homeButton, &QToolButton::clicked, this, &RibbonBar::setHomeActive);
 
     _tabRow->setContentsMargins(0, 0, 0, 0);
-    _tabRow->addWidget(_homeButton);
+    _tabRow->setSpacing(6);
+    _tabRow->addWidget(_homeButton, 0, Qt::AlignBottom);
     _tabRow->addStretch();
     setupSearchAndHelp();
+    setupSettingsButton();
     layout->addLayout(_tabRow);
 
     _scrollArea->setObjectName(QStringLiteral("RibbonScrollArea"));
@@ -388,6 +396,131 @@ RibbonBar::RibbonBar(QWidget* parent)
     _scrollArea->horizontalScrollBar()->installEventFilter(this);
     _panel->installEventFilter(this);
     updateScrollAreaHeight();
+
+    setupStyle();
+    // Check again once the main window is shown, as the theme is fully applied only then
+    QMetaObject::invokeMethod(this, &RibbonBar::setupStyle, Qt::QueuedConnection);
+}
+
+bool RibbonBar::isDarkTheme()
+{
+    // Themes do not always set an application palette matching their style sheet. The
+    // menu bar is styled by every theme and its polished palette follows the style sheet.
+    QWidget* reference = getMainWindow() ? getMainWindow()->menuBar() : nullptr;
+    QColor background = QApplication::palette().color(QPalette::Window);
+    if (reference) {
+        reference->ensurePolished();
+        background = reference->palette().color(reference->backgroundRole());
+    }
+    return background.lightness() < 128;
+}
+
+void RibbonBar::setupStyle()
+{
+    const bool dark = isDarkTheme();
+    if (_darkStyle == int(dark)) {
+        return;  // also prevents a loop, as the style sheet changes the palette
+    }
+    _darkStyle = int(dark);
+
+    struct Colors
+    {
+        const char* bar;       // behind the tabs
+        const char* tab;       // unselected tab
+        const char* hover;     // tab under the mouse
+        const char* selected;  // selected tab
+        const char* accent;    // text of the selected tab
+        const char* card;      // panel with the commands
+        const char* text;
+    };
+    const Colors light {"#e9ecf0", "#dde1e7", "#d2d8e0", "#d6e4f7", "#1f5fbf", "#f9fafb", "#1f2328"};
+    const Colors darkColors {"#232529", "#2f3237", "#3a3e44", "#2f4260", "#8fbaff", "#2c2f34", "#e6e8eb"};
+    const Colors& c = dark ? darkColors : light;
+
+    // Large rounded tabs for Home and the workbenches, above a rounded card with the
+    // commands. The workbench tabs are styled here as they are part of the ribbon.
+    const QString tab = QStringLiteral(
+        "background: %2; color: %7; border: none; border-top-left-radius: 10px;"
+        " border-top-right-radius: 10px; padding: 7px 14px; font-weight: 500;"
+    );
+    setStyleSheet(
+        (QStringLiteral("#RibbonBar { background: %1; }"
+                        "#RibbonPanel { background: %6; border-radius: 10px;"
+                        "  border-top-left-radius: 0px; }"
+                        "#RibbonGroupCaption { color: %7; font-weight: 600; }"
+                        "#RibbonHomeButton { ")
+         + tab
+         + QStringLiteral(
+             " }"
+             "#RibbonHomeButton:hover { background: %3; }"
+             "#RibbonHomeButton:checked { background: %4; color: %5; }"
+             "#RibbonBar QTabBar::tab { "
+         )
+         + tab
+         + QStringLiteral(
+             " margin-right: 6px; }"
+             "#RibbonBar QTabBar::tab:hover { background: %3; }"
+             "#RibbonBar QTabBar::tab:selected { background: %4; color: %5; }"
+             "#RibbonBar QTabBar[homeActive=\"true\"]::tab:selected { background: %2; color: %7; }"
+             "#RibbonSettingsButton, #RibbonHelpButton { border: none; border-radius: 8px;"
+             "  padding: 4px; background: transparent; }"
+             "#RibbonSettingsButton:hover, #RibbonHelpButton:hover { background: %3; }"
+             "#RibbonSettingsButton::menu-indicator { image: none; }"
+         ))
+            .arg(QLatin1String(c.bar),
+                 QLatin1String(c.tab),
+                 QLatin1String(c.hover),
+                 QLatin1String(c.selected),
+                 QLatin1String(c.accent),
+                 QLatin1String(c.card),
+                 QLatin1String(c.text))
+    );
+}
+
+void RibbonBar::changeEvent(QEvent* ev)
+{
+    QWidget::changeEvent(ev);
+    // The theme may have switched between light and dark. Queued, as changing the
+    // style sheet from within this event causes further palette changes.
+    if (ev->type() == QEvent::PaletteChange) {
+        QMetaObject::invokeMethod(this, &RibbonBar::setupStyle, Qt::QueuedConnection);
+    }
+}
+
+void RibbonBar::setupSettingsButton()
+{
+    // Settings at the far right of the tab row. As the classic menu bar is hidden with
+    // the ribbon, its menus are offered here as well, so that every command stays
+    // reachable.
+    auto button = new QToolButton(this);
+    button->setObjectName(QStringLiteral("RibbonSettingsButton"));
+    button->setToolTip(tr("Settings and all menus"));
+    button->setIcon(BitmapFactory().iconFromTheme("preferences-system"));
+    button->setIconSize(QSize(20, 20));
+    button->setPopupMode(QToolButton::InstantPopup);
+
+    auto menu = new QMenu(button);
+    button->setMenu(menu);
+    connect(menu, &QMenu::aboutToShow, this, [menu] {
+        // Rebuilt each time, as the menus change with the active workbench
+        menu->clear();
+        auto& commandManager = Application::Instance->commandManager();
+        for (const char* command : {"Std_DlgPreferences", "Std_DlgCustomize"}) {
+            if (commandManager.getCommandByName(command)) {
+                commandManager.addTo(command, menu);
+            }
+        }
+        menu->addSeparator();
+        if (auto menuBar = getMainWindow()->menuBar()) {
+            for (QAction* action : menuBar->actions()) {
+                if (action->menu() && action->isVisible()) {
+                    menu->addMenu(action->menu());
+                }
+            }
+        }
+    });
+
+    _tabRow->addWidget(button);
 }
 
 void RibbonBar::setupSearchAndHelp()
@@ -503,7 +636,7 @@ void RibbonBar::addToolBar(QToolBar* toolbar)
         bool shown = takeFromMainWindow(toolbar);
         toolbar->setOrientation(Qt::Horizontal);
         toolbar->setMovable(false);
-        _tabRow->insertWidget(_tabRow->indexOf(_homeButton) + 1, toolbar);
+        _tabRow->insertWidget(_tabRow->indexOf(_homeButton) + 1, toolbar, 0, Qt::AlignBottom);
         toolbar->setVisible(shown);
         _workbenchToolBar = toolbar;
         toolbar->installEventFilter(this);
@@ -549,6 +682,7 @@ void RibbonBar::buildHomePage()
         auto toolbar = new QToolBar(_panel);
         toolbar->setObjectName(QStringLiteral("RibbonHome_") + QLatin1String(section.title));
         toolbar->setWindowTitle(QApplication::translate("Workbench", section.title));
+        toolbar->setIconSize(QSize(iconSize(), iconSize()));
 
         for (const char* command : section.commands) {
             if (qstrcmp(command, "Separator") == 0) {
@@ -587,6 +721,19 @@ void RibbonBar::setHomeActive(bool active)
         }
     }
 
+    // The tab of the active workbench stays current in the tab bar, show it as not
+    // selected while the Home page is shown
+    if (_workbenchToolBar) {
+        for (auto tabBar : _workbenchToolBar->findChildren<QTabBar*>()) {
+            if (tabBar->property("homeActive").toBool() != active) {
+                tabBar->setProperty("homeActive", active);
+                tabBar->style()->unpolish(tabBar);
+                tabBar->style()->polish(tabBar);
+                tabBar->update();
+            }
+        }
+    }
+
     _scrollArea->horizontalScrollBar()->setValue(0);
     _panel->update();
 }
@@ -599,6 +746,9 @@ void RibbonBar::connectWorkbenchTabs()
 
     // Clicking a workbench tab, also the one of the active workbench, leaves the Home page
     for (auto tabBar : _workbenchToolBar->findChildren<QTabBar*>()) {
+        // Large tabs as in the Home button, without the line below the tabs
+        tabBar->setDrawBase(false);
+        tabBar->setIconSize(QSize(tabIconSize, tabIconSize));
         connect(
             tabBar,
             &QTabBar::tabBarClicked,
@@ -612,6 +762,20 @@ void RibbonBar::connectWorkbenchTabs()
 void RibbonBar::onWorkbenchTabClicked()
 {
     setHomeActive(false);
+}
+
+int RibbonBar::iconSize()
+{
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow"
+    );
+    return std::max(int(hGrp->GetInt("RibbonIconSize", 32)), 16);
+}
+
+bool RibbonBar::isGroupToolBar(const QWidget* widget) const
+{
+    auto it = _groups.find(qobject_cast<const QToolBar*>(widget));
+    return it != _groups.end() && it->second && widget->parentWidget() == it->second;
 }
 
 bool RibbonBar::contains(const QWidget* widget) const

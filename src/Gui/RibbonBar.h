@@ -117,6 +117,10 @@ public:
     void addToolBar(QToolBar* toolbar);
     /// Returns true if \a widget is a toolbar hosted by the ribbon.
     bool contains(const QWidget* widget) const;
+    /// Returns true if \a widget is a toolbar shown as a group of the ribbon
+    bool isGroupToolBar(const QWidget* widget) const;
+    /// Icon size of the commands in the ribbon
+    static int iconSize();
     /// Sorts the groups to follow the given toolbar names. Unlisted groups go last.
     void setOrder(const QStringList& names);
     /// Switches between the Home page and the page of the active workbench
@@ -125,8 +129,14 @@ public:
 protected:
     void contextMenuEvent(QContextMenuEvent* ev) override;
     bool eventFilter(QObject* source, QEvent* ev) override;
+    void changeEvent(QEvent* ev) override;
 
 private:
+    static constexpr int tabIconSize = 20;
+
+    static bool isDarkTheme();
+    void setupStyle();
+    void setupSettingsButton();
     static bool isGeneralToolBar(const QToolBar* toolbar);
     void setupSearchAndHelp();
     QIcon searchIcon() const;
@@ -137,6 +147,7 @@ private:
     void updateScrollAreaHeight();
 
     bool _homeActive = false;
+    int _darkStyle = -1;  // -1: style not set yet
     QToolButton* _homeButton;
     QHBoxLayout* _tabRow;
     RibbonPanel* _panel;
