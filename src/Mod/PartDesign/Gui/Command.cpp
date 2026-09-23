@@ -1265,7 +1265,7 @@ CmdPartDesignPad::CmdPartDesignPad()
 {
     sAppModule = "PartDesign";
     sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Pad");
+    sMenuText = QT_TR_NOOP("Extrude");
     sToolTipText = QT_TR_NOOP("Extrudes the selected sketch or profile and adds it to the body");
     sWhatsThis = "PartDesign_Pad";
     sStatusTip = sToolTipText;
@@ -1294,7 +1294,7 @@ CmdPartDesignPocket::CmdPartDesignPocket()
 {
     sAppModule = "PartDesign";
     sGroup = QT_TR_NOOP("PartDesign");
-    sMenuText = QT_TR_NOOP("Pocket");
+    sMenuText = QT_TR_NOOP("Extrude Cut");
     sToolTipText = QT_TR_NOOP("Extrudes the selected sketch or profile and removes it from the body");
     sWhatsThis = "PartDesign_Pocket";
     sStatusTip = sToolTipText;
@@ -2775,8 +2775,11 @@ public:
     {
         sAppModule = "PartDesign";
         sGroup = "PartDesign";
-        sMenuText = QT_TR_NOOP("Create Datum");
-        sToolTipText = QT_TR_NOOP("Creates a datum object or local coordinate system");
+        sMenuText = QT_TR_NOOP("Reference Geometry");
+        sToolTipText = QT_TR_NOOP(
+            "Creates reference geometry to position other features: a datum plane, line or "
+            "point, or a local coordinate system"
+        );
         sWhatsThis = "PartDesign_CompDatums";
         sStatusTip = sToolTipText;
         eType = ForEdit;
@@ -2800,7 +2803,7 @@ public:
     }
 };
 
-// Command group for datums =============================================
+// Command group for sketches ===========================================
 
 class CmdPartDesignCompSketches: public Gui::GroupCommand
 {
@@ -2810,9 +2813,9 @@ public:
     {
         sAppModule = "PartDesign";
         sGroup = "PartDesign";
-        sMenuText = QT_TR_NOOP("Create Datum");
-        sToolTipText = QT_TR_NOOP("Creates a datum object or local coordinate system");
-        sWhatsThis = "PartDesign_CompDatums";
+        sMenuText = QT_TR_NOOP("Sketch");
+        sToolTipText = QT_TR_NOOP("Creates a new sketch, or attaches or edits an existing one");
+        sWhatsThis = "PartDesign_CompSketches";
         sStatusTip = sToolTipText;
         eType = ForEdit;
 
