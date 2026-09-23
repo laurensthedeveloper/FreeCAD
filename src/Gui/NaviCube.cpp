@@ -614,15 +614,16 @@ SbRotation NaviCubeImplementation::getFaceRotation(PickId id) const
         case PickId::BottomLeft:
             return makeFaceRotation(y, -z - x, pi);
 
-        // Buttons (axis rotations; angle is scaled by caller)
+        // Buttons (axis rotations; angle is scaled by caller). The arrows point towards
+        // the cube, so each one turns the view the opposite way of an outward arrow.
         case PickId::ArrowNorth:
-            return SbRotation(SbVec3f(-1, 0, 0), 1).inverse();
-        case PickId::ArrowSouth:
             return SbRotation(SbVec3f(1, 0, 0), 1).inverse();
+        case PickId::ArrowSouth:
+            return SbRotation(SbVec3f(-1, 0, 0), 1).inverse();
         case PickId::ArrowEast:
-            return SbRotation(SbVec3f(0, 1, 0), 1).inverse();
-        case PickId::ArrowWest:
             return SbRotation(SbVec3f(0, -1, 0), 1).inverse();
+        case PickId::ArrowWest:
+            return SbRotation(SbVec3f(0, 1, 0), 1).inverse();
         case PickId::ArrowLeft:
             return SbRotation(SbVec3f(0, 0, 1), 1).inverse();
         case PickId::ArrowRight:

@@ -1808,7 +1808,8 @@ void SoNaviCube::addButtonFace(PickId pickId) const
         case PickId::ArrowNorth:
         case PickId::ArrowSouth:
         case PickId::ArrowEast: {
-            pointData = {100.0F, 0.0F, 80.0F, -18.0F, 80.0F, 18.0F};
+            // Pointing towards the cube
+            pointData = {80.0F, 0.0F, 100.0F, 18.0F, 100.0F, -18.0F};
             break;
         }
         case PickId::ViewMenu: {
