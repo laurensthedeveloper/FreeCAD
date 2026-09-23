@@ -945,7 +945,10 @@ void SoNaviCube::buildButtonsSection() const
         }
         nodes.sep->addChild(nodes.outline);
 
-        buttonsSep->addChild(nodes.sep);
+        nodes.visibility = new SoSwitch;
+        nodes.visibility->whichChild = SO_SWITCH_ALL;
+        nodes.visibility->addChild(nodes.sep);
+        buttonsSep->addChild(nodes.visibility);
         buttonNodes[pickIndex(pickId)] = nodes;
     }
 }
@@ -1141,12 +1144,33 @@ void SoNaviCube::updateAxes(const RenderParams& params) const
     style.axisDirty = false;
 }
 
+bool SoNaviCube::isStepArrow(PickId pickId)
+{
+    return pickId == PickId::ArrowNorth || pickId == PickId::ArrowSouth
+        || pickId == PickId::ArrowEast || pickId == PickId::ArrowWest;
+}
+
 void SoNaviCube::updateButtons(const RenderParams& params) const
 {
+    // Looking straight at a face: the view direction is along one of the axes
+    SbVec3f viewDirection;
+    cameraOrientation.getValue().multVec(SbVec3f(0.0F, 0.0F, -1.0F), viewDirection);
+    constexpr float straightCosine = 0.9999F;  // within about 0.8 degrees
+    stepArrowsShown = std::max({std::abs(viewDirection[0]),
+                                std::abs(viewDirection[1]),
+                                std::abs(viewDirection[2])})
+        > straightCosine;
+
     for (PickId pickId : kButtonPickIds) {
         ButtonNodes& nodes = buttonNodes[pickIndex(pickId)];
         if (nodes.coordsSwitch && nodes.coordsSwitch->whichChild.getValue() != params.coordChild) {
             nodes.coordsSwitch->whichChild = params.coordChild;
+        }
+        if (nodes.visibility) {
+            const int which = (!isStepArrow(pickId) || stepArrowsShown) ? SO_SWITCH_ALL : SO_SWITCH_NONE;
+            if (nodes.visibility->whichChild.getValue() != which) {
+                nodes.visibility->whichChild = which;
+            }
         }
     }
 
@@ -1401,6 +1425,9 @@ SoNaviCube::PickId SoNaviCube::pickAt(const SbVec2s& point) const
         1.0F - ((static_cast<float>(localPoint[1]) + 0.5F) / viewportHeight)
     );
     for (PickId pickId : kButtonPickIds) {
+        if (isStepArrow(pickId) && !stepArrowsShown) {
+            continue;
+        }
         const ButtonHitRect& rect = buttonHitRects[pickIndex(pickId)];
         if (rect.active && overlayPoint[0] >= rect.left && overlayPoint[0] <= rect.right
             && overlayPoint[1] >= rect.top && overlayPoint[1] <= rect.bottom) {
@@ -1808,8 +1835,8 @@ void SoNaviCube::addButtonFace(PickId pickId) const
         case PickId::ArrowNorth:
         case PickId::ArrowSouth:
         case PickId::ArrowEast: {
-            // Pointing towards the cube
-            pointData = {80.0F, 0.0F, 100.0F, 18.0F, 100.0F, -18.0F};
+            // Small, close to the cube and pointing towards it
+            pointData = {54.0F, 0.0F, 64.0F, 8.5F, 64.0F, -8.5F};
             break;
         }
         case PickId::ViewMenu: {

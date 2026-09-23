@@ -1130,6 +1130,12 @@ bool NaviCubeImplementation::mouseReleased(short x, short y)
             if (pickId == PickId::Backside) {
                 rotation.scaleAngle(pi);
             }
+            else if (pickId == PickId::ArrowNorth || pickId == PickId::ArrowSouth
+                     || pickId == PickId::ArrowEast || pickId == PickId::ArrowWest) {
+                // These are only shown when looking straight at a face, and turn to the
+                // next face
+                rotation.scaleAngle(pi / 2.0F);
+            }
             else {
                 rotation.scaleAngle(rotStepAngle);
             }

@@ -217,6 +217,7 @@ private:
 
     struct ButtonNodes
     {
+        SoSwitch* visibility {nullptr};
         SoSeparator* sep {nullptr};
         SoMaterial* fillMaterial {nullptr};
         SoMaterial* outlineMaterial {nullptr};
@@ -248,6 +249,10 @@ private:
     mutable SoSeparator* buttonsSep {nullptr};
     mutable std::array<LabelNodes, kPickIdCount> labelNodes;
     mutable std::array<ButtonNodes, kPickIdCount> buttonNodes;
+    // The arrows that turn the view by a step are only shown when looking straight at
+    // one of the faces of the cube
+    mutable bool stepArrowsShown {true};
+    static bool isStepArrow(PickId pickId);
 
     struct StyleState
     {
