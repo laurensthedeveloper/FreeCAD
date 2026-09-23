@@ -138,7 +138,8 @@ private:
     void setupStyle();
     void setupSettingsButton();
     static bool isGeneralToolBar(const QToolBar* toolbar);
-    void setupSearchAndHelp();
+    void setupQuickAccess(QHBoxLayout* row);
+    void setupSearchAndHelp(QHBoxLayout* row);
     QIcon searchIcon() const;
     void buildHomePage();
     void onGroupDestroyed(QObject* group);

@@ -108,29 +108,18 @@ struct HomeSection
 // not installed) are skipped.
 const std::vector<HomeSection>& homeSections()
 {
+    // The most used file and edit commands are in the quick access bar above the tabs,
+    // see quickAccessCommands()
     static const std::vector<HomeSection> sections {
-        {QT_TRANSLATE_NOOP("Workbench", "File"),
-         {"Std_New",
-          "Std_Open",
-          "Std_Save",
+        {QT_TRANSLATE_NOOP("Workbench", "Document"),
+         {"Std_Import",
           "Std_SaveAs",
-          "Separator",
-          "Std_Import",
-          "Std_Export",
+          "Std_SaveAll",
           "Separator",
           "Std_Print",
-          "Std_PrintPdf"}},
-        {QT_TRANSLATE_NOOP("Workbench", "Edit"),
-         {"Std_Undo",
-          "Std_Redo",
+          "Std_PrintPdf",
           "Separator",
-          "Std_Cut",
-          "Std_Copy",
-          "Std_Paste",
-          "Std_Delete",
-          "Separator",
-          "Std_SelectAll",
-          "Std_Refresh"}},
+          "Std_SelectAll"}},
         {QT_TRANSLATE_NOOP("Workbench", "Structure"),
          {"Std_Part", "Std_Group", "Std_LinkActions", "Std_VarSet"}},
         {QT_TRANSLATE_NOOP("Workbench", "Macro"),
@@ -141,6 +130,27 @@ const std::vector<HomeSection>& homeSections()
          {"Std_OnlineHelp", "Std_WhatsThis", "Std_FreeCADForum", "Std_About"}},
     };
     return sections;
+}
+
+// File and edit commands in the title row, available on every tab
+const std::vector<const char*>& quickAccessCommands()
+{
+    static const std::vector<const char*> commands {
+        "Std_New",
+        "Std_Open",
+        "Std_Save",
+        "Std_Export",
+        "Separator",
+        "Std_Undo",
+        "Std_Redo",
+        "Std_Cut",
+        "Std_Copy",
+        "Std_Paste",
+        "Std_Delete",
+        "Separator",
+        "Std_Refresh",
+    };
+    return commands;
 }
 
 // Builds the button label shown under the icon from the command's menu text. The text is
@@ -368,11 +378,19 @@ RibbonBar::RibbonBar(QWidget* parent)
     _homeButton->setCheckable(true);
     connect(_homeButton, &QToolButton::clicked, this, &RibbonBar::setHomeActive);
 
+    // Title row: quick access to file and edit commands, command search and help
+    auto titleRow = new QHBoxLayout();
+    titleRow->setContentsMargins(0, 0, 0, 6);
+    titleRow->setSpacing(6);
+    setupQuickAccess(titleRow);
+    titleRow->addStretch();
+    setupSearchAndHelp(titleRow);
+    layout->addLayout(titleRow);
+
     _tabRow->setContentsMargins(0, 0, 0, 0);
     _tabRow->setSpacing(6);
     _tabRow->addWidget(_homeButton, 0, Qt::AlignBottom);
     _tabRow->addStretch();
-    setupSearchAndHelp();
     setupSettingsButton();
     layout->addLayout(_tabRow);
 
@@ -466,6 +484,10 @@ void RibbonBar::setupStyle()
              "  padding: 4px; background: transparent; }"
              "#RibbonSettingsButton:hover, #RibbonHelpButton:hover { background: %3; }"
              "#RibbonSettingsButton::menu-indicator { image: none; }"
+             "#RibbonQuickAccess { border: none; background: transparent; spacing: 2px; }"
+             "#RibbonQuickAccess QToolButton { border: none; border-radius: 6px; padding: 3px;"
+             "  background: transparent; }"
+             "#RibbonQuickAccess QToolButton:hover { background: %3; }"
          ))
             .arg(QLatin1String(c.bar),
                  QLatin1String(c.tab),
@@ -523,7 +545,34 @@ void RibbonBar::setupSettingsButton()
     _tabRow->addWidget(button);
 }
 
-void RibbonBar::setupSearchAndHelp()
+void RibbonBar::setupQuickAccess(QHBoxLayout* row)
+{
+    auto logo = new QLabel(this);
+    logo->setObjectName(QStringLiteral("RibbonLogo"));
+    logo->setPixmap(BitmapFactory().iconFromTheme("freecad").pixmap(QSize(22, 22)));
+    logo->setToolTip(QStringLiteral("FreeCAD"));
+    row->addWidget(logo);
+
+    // Small icon only buttons, the file and edit commands used on every tab
+    auto toolbar = new QToolBar(this);
+    toolbar->setObjectName(QStringLiteral("RibbonQuickAccess"));
+    toolbar->setIconSize(QSize(20, 20));
+    toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    toolbar->setMovable(false);
+
+    auto& commandManager = Application::Instance->commandManager();
+    for (const char* command : quickAccessCommands()) {
+        if (qstrcmp(command, "Separator") == 0) {
+            toolbar->addSeparator();
+        }
+        else if (commandManager.getCommandByName(command)) {
+            commandManager.addTo(command, toolbar);
+        }
+    }
+    row->addWidget(toolbar);
+}
+
+void RibbonBar::setupSearchAndHelp(QHBoxLayout* row)
 {
     // Command search on the right of the tab row, like the command palette of other apps
     auto search = new QLineEdit(this);
@@ -555,7 +604,7 @@ void RibbonBar::setupSearchAndHelp()
         search->selectAll();
     });
 
-    _tabRow->addWidget(search);
+    row->addWidget(search);
 
     // Help, the same as Help > Help (F1)
     auto help = new QToolButton(this);
@@ -567,7 +616,7 @@ void RibbonBar::setupSearchAndHelp()
     connect(help, &QToolButton::clicked, this, [] {
         Application::Instance->commandManager().runCommandByName("Std_OnlineHelp");
     });
-    _tabRow->addWidget(help);
+    row->addWidget(help);
 }
 
 QIcon RibbonBar::searchIcon() const
