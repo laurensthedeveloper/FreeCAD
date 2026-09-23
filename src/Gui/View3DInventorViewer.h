@@ -102,6 +102,7 @@ class NavigationAnimation;
 class View3DInventor;
 class ViewProvider;
 class SoFCBackgroundGradient;
+class SoFCGroundGrid;
 class NavigationStyle;
 class SoFCUnifiedSelection;
 class Document;
@@ -555,6 +556,9 @@ public:
     void setAxisLetterColor(const SbColor& color);
     void setAxisCross(bool on);
     bool hasAxisCross();
+    //! Grid on the XY plane with the axes through the origin
+    void setGroundGrid(bool on);
+    bool hasGroundGrid() const;
 
     void showRotationCenter(bool show);
     void changeRotationCenterPosition(const SbVec3f& newCenter);
@@ -641,6 +645,7 @@ private:
     void setCursorRepresentation(int mode);
     void aboutToDestroyGLContext();
     void createStandardCursors();
+    void updateGroundGridColors();
     bool applyCameraState(const SoCamera& camera);
 
 private:
@@ -694,6 +699,8 @@ private:
     // big one in the middle
     SoShapeScale* axisCross;
     SoGroup* axisGroup;
+    SoGroup* groundGridGroup {nullptr};
+    SoFCGroundGrid* groundGrid {nullptr};
 
     SoGroup* rotationCenterGroup;
 

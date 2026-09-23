@@ -131,6 +131,7 @@
 #include "RubberbandOverlay.h"
 #include "Inventor/SoAxisCrossKit.h"
 #include "Inventor/SoFCBackgroundGradient.h"
+#include "Inventor/SoFCGroundGrid.h"
 #include "Inventor/SoFCBoundingBox.h"
 #include "MainWindow.h"
 #include "Multisample.h"
@@ -1988,6 +1989,7 @@ void View3DInventorViewer::setGradientBackground(View3DInventorViewer::Backgroun
             }
             break;
     }
+    updateGroundGridColors();
 }
 
 View3DInventorViewer::Background View3DInventorViewer::getGradientBackground() const
@@ -2006,6 +2008,7 @@ View3DInventorViewer::Background View3DInventorViewer::getGradientBackground() c
 void View3DInventorViewer::setGradientBackgroundColor(const SbColor& fromColor, const SbColor& toColor)
 {
     pcBackGround->setColorGradient(fromColor, toColor);
+    updateGroundGridColors();
 }
 
 void View3DInventorViewer::setGradientBackgroundColor(
@@ -2015,6 +2018,7 @@ void View3DInventorViewer::setGradientBackgroundColor(
 )
 {
     pcBackGround->setColorGradient(fromColor, toColor, midColor);
+    updateGroundGridColors();
 }
 
 void View3DInventorViewer::setEnabledFPSCounter(bool on)
@@ -2242,6 +2246,54 @@ void View3DInventorViewer::setAxisCross(bool on)
 bool View3DInventorViewer::hasAxisCross()
 {
     return axisGroup;
+}
+
+void View3DInventorViewer::setGroundGrid(bool on)
+{
+    auto sep = static_cast<SoSeparator*>(getSceneGraph());  // NOLINT
+
+    if (on && !groundGridGroup) {
+        groundGrid = new SoFCGroundGrid;
+
+        // Not part of the bounding box when fitting the view, only when clipping
+        groundGridGroup = new SoSkipBoundingGroup;
+        groundGridGroup->addChild(groundGrid);
+        sep->addChild(groundGridGroup);
+        updateGroundGridColors();
+    }
+    else if (!on && groundGridGroup) {
+        sep->removeChild(groundGridGroup);
+        groundGridGroup = nullptr;
+        groundGrid = nullptr;
+    }
+}
+
+bool View3DInventorViewer::hasGroundGrid() const
+{
+    return groundGridGroup;
+}
+
+void View3DInventorViewer::updateGroundGridColors()
+{
+    if (!groundGrid) {
+        return;
+    }
+
+    // Light lines on a dark or medium background, dark lines on a light one
+    SbColor background;
+    if (getGradientBackground() == Background::NoGradient) {
+        const QColor color = backgroundColor();
+        background.setValue(color.redF(), color.greenF(), color.blueF());
+    }
+    else {
+        background = (pcBackGround->fromColor.getValue() + pcBackGround->toColor.getValue()) / 2.0F;
+    }
+    const float luminance = background.dot(SbVec3f(0.299F, 0.587F, 0.114F));
+    groundGrid->color = luminance > 0.8F ? SbColor(0.15F, 0.17F, 0.2F) : SbColor(1.0F, 1.0F, 1.0F);
+
+    groundGrid->xAxisColor.setValue(m_xColor.r, m_xColor.g, m_xColor.b);
+    groundGrid->yAxisColor.setValue(m_yColor.r, m_yColor.g, m_yColor.b);
+    groundGrid->zAxisColor.setValue(m_zColor.r, m_zColor.g, m_zColor.b);
 }
 
 void View3DInventorViewer::showRotationCenter(bool show)
@@ -5153,6 +5205,7 @@ void View3DInventorViewer::updateColors()
     m_zColor = Base::Color(static_cast<uint32_t>(colorLong));
 
     naviCube->updateColors();
+    updateGroundGridColors();
 
     if (hasAxisCross()) {
         setAxisCross(false);  // Force redraw

@@ -79,6 +79,7 @@ void View3DSettings::applySettings()
     OnChange(*hGrp, "CornerCoordSystemSize");
     OnChange(*hGrp, "AxisLetterColor");
     OnChange(*hGrp, "ShowAxisCross");
+    OnChange(*hGrp, "ShowGroundGrid");
     OnChange(*hGrp, "UseNavigationAnimations");
     OnChange(*hGrp, "UseSpinningAnimations");
     OnChange(*hGrp, "Gradient");
@@ -376,6 +377,11 @@ void View3DSettings::OnChange(ParameterGrp::SubjectType& rCaller, ParameterGrp::
     else if (strcmp(Reason, "ShowAxisCross") == 0) {
         for (auto _viewer : _viewers) {
             _viewer->setAxisCross(rGrp.GetBool("ShowAxisCross", false));
+        }
+    }
+    else if (strcmp(Reason, "ShowGroundGrid") == 0) {
+        for (auto _viewer : _viewers) {
+            _viewer->setGroundGrid(rGrp.GetBool("ShowGroundGrid", true));
         }
     }
     else if (strcmp(Reason, "UseNavigationAnimations") == 0) {
