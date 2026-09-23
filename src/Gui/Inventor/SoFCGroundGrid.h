@@ -29,6 +29,7 @@
 
 class SoLineSet;
 class SoState;
+class SoTransform;
 class SoVertexProperty;
 
 namespace Gui
@@ -54,6 +55,7 @@ public:
     SoSFColor xAxisColor;
     SoSFColor yAxisColor;
     SoSFColor zAxisColor;
+    SoSFColor glowColor;  //!< color of the light spot on the ground
 
     void GLRenderBelowPath(SoGLRenderAction* action) override;
     void GLRenderInPath(SoGLRenderAction* action) override;
@@ -73,10 +75,13 @@ private:
         uint32_t xAxisColor {0};
         uint32_t yAxisColor {0};
         uint32_t zAxisColor {0};
+        uint32_t glowColor {0};
 
         bool operator==(const GeometryState&) const = default;
     };
 
+    SoTransform* glowTransform {nullptr};
+    SoVertexProperty* glowVertices {nullptr};
     SoVertexProperty* gridVertices {nullptr};
     SoLineSet* gridLines {nullptr};
     SoVertexProperty* axisVertices {nullptr};

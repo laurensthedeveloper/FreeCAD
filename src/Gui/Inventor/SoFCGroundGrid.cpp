@@ -25,15 +25,19 @@
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
+#include <Inventor/nodes/SoDepthBuffer.h>
 #include <Inventor/nodes/SoDrawStyle.h>
+#include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoLineSet.h>
 #include <Inventor/nodes/SoPickStyle.h>
+#include <Inventor/nodes/SoTransform.h>
 #include <Inventor/nodes/SoTransparencyType.h>
 #include <Inventor/nodes/SoVertexProperty.h>
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <vector>
 
 #include "SoFCGroundGrid.h"
@@ -53,6 +57,12 @@ constexpr float majorAlpha = 0.45F;
 constexpr float axisAlpha = 0.9F;
 // The spacing is chosen such that there are this many cells at most across the view
 constexpr float maxCellsInView = 40.0F;
+// The light spot on the ground: its radius relative to the size of the view, its
+// opacity in the center and the number of rings and segments of the disk
+constexpr float glowSize = 0.9F;
+constexpr float glowAlpha = 0.55F;
+constexpr int glowRings = 16;
+constexpr int glowSegments = 72;
 
 uint32_t packColor(const SbColor& color, float alpha)
 {
@@ -86,6 +96,7 @@ SoFCGroundGrid::SoFCGroundGrid()
     SO_NODE_ADD_FIELD(xAxisColor, (SbColor(0.85F, 0.2F, 0.2F)));
     SO_NODE_ADD_FIELD(yAxisColor, (SbColor(0.2F, 0.7F, 0.2F)));
     SO_NODE_ADD_FIELD(zAxisColor, (SbColor(0.2F, 0.3F, 0.9F)));
+    SO_NODE_ADD_FIELD(glowColor, (SbColor(1.0F, 1.0F, 1.0F)));
 
     // The geometry depends on the camera, so it must not be cached
     renderCaching = SoSeparator::OFF;
@@ -104,6 +115,53 @@ SoFCGroundGrid::SoFCGroundGrid()
     auto pickStyle = new SoPickStyle;
     pickStyle->style = SoPickStyle::UNPICKABLE;
     addChild(pickStyle);
+
+    // A soft light spot on the ground below the grid lines. It does not write the depth
+    // buffer, so it never hides the grid or the objects.
+    auto glowSeparator = new SoSeparator;
+    glowSeparator->renderCaching = SoSeparator::OFF;
+    auto glowDepth = new SoDepthBuffer;
+    glowDepth->write = FALSE;
+    glowDepth->function = SoDepthBuffer::LESS;
+    glowSeparator->addChild(glowDepth);
+    glowTransform = new SoTransform;
+    glowSeparator->addChild(glowTransform);
+    glowVertices = new SoVertexProperty;
+    glowVertices->materialBinding = SoVertexProperty::PER_VERTEX_INDEXED;
+    auto glowFaces = new SoIndexedFaceSet;
+    glowFaces->vertexProperty = glowVertices;
+    glowSeparator->addChild(glowFaces);
+    addChild(glowSeparator);
+
+    // A disk of radius 1 made of rings, so that its opacity can fade out towards the rim
+    std::vector<SbVec3f> diskPoints {SbVec3f(0.0F, 0.0F, 0.0F)};
+    std::vector<int32_t> diskFaces;
+    auto ringVertex = [](int ring, int segment) {
+        return 1 + (ring - 1) * glowSegments + segment % glowSegments;
+    };
+    for (int ring = 1; ring <= glowRings; ++ring) {
+        const float radius = static_cast<float>(ring) / glowRings;
+        for (int segment = 0; segment < glowSegments; ++segment) {
+            const float angle = 2.0F * std::numbers::pi_v<float> * static_cast<float>(segment) / glowSegments;
+            diskPoints.emplace_back(radius * std::cos(angle), radius * std::sin(angle), 0.0F);
+
+            if (ring == 1) {
+                diskFaces.insert(diskFaces.end(), {0, ringVertex(1, segment), ringVertex(1, segment + 1), -1});
+            }
+            else {
+                diskFaces.insert(
+                    diskFaces.end(),
+                    {ringVertex(ring - 1, segment),
+                     ringVertex(ring, segment),
+                     ringVertex(ring, segment + 1),
+                     ringVertex(ring - 1, segment + 1),
+                     -1}
+                );
+            }
+        }
+    }
+    glowVertices->vertex.setValues(0, static_cast<int>(diskPoints.size()), diskPoints.data());
+    glowFaces->coordIndex.setValues(0, static_cast<int>(diskFaces.size()), diskFaces.data());
 
     auto gridStyle = new SoDrawStyle;
     gridStyle->lineWidth = 1.0F;
@@ -167,6 +225,18 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
         return;
     }
 
+    // The light spot follows the view on every frame. Notifications are off, as the
+    // new values are used by this traversal already and must not trigger another one.
+    const SbVec3f glowTranslation(center[0], center[1], 0.0F);
+    const SbVec3f glowScale(viewSize * glowSize, viewSize * glowSize, 1.0F);
+    if (glowTransform->translation.getValue() != glowTranslation
+        || glowTransform->scaleFactor.getValue() != glowScale) {
+        const SbBool notify = glowTransform->enableNotify(FALSE);
+        glowTransform->translation.setValue(glowTranslation);
+        glowTransform->scaleFactor.setValue(glowScale);
+        glowTransform->enableNotify(notify);
+    }
+
     // Powers of ten, so that the lines are at round coordinates
     GeometryState next;
     next.spacing = std::pow(10.0F, std::ceil(std::log10(viewSize / maxCellsInView)));
@@ -176,8 +246,19 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
     next.xAxisColor = xAxisColor.getValue().getPackedValue();
     next.yAxisColor = yAxisColor.getValue().getPackedValue();
     next.zAxisColor = zAxisColor.getValue().getPackedValue();
+    next.glowColor = glowColor.getValue().getPackedValue();
     if (next == geometryState) {
         return;  // also prevents a redraw on every frame, as setting the geometry notifies
+    }
+    if (next.glowColor != geometryState.glowColor) {
+        // Smooth falloff: nearly even in the center, fading out softly towards the rim
+        std::vector<uint32_t> glowColors {packColor(glowColor.getValue(), glowAlpha)};
+        for (int ring = 1; ring <= glowRings; ++ring) {
+            const float r = static_cast<float>(ring) / glowRings;
+            const float alpha = glowAlpha * (1.0F - r * r * (3.0F - 2.0F * r));
+            glowColors.insert(glowColors.end(), glowSegments, packColor(glowColor.getValue(), alpha));
+        }
+        glowVertices->orderedRGBA.setValues(0, static_cast<int>(glowColors.size()), glowColors.data());
     }
     geometryState = next;
 
