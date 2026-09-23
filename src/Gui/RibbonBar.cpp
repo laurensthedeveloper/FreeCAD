@@ -348,7 +348,7 @@ RibbonBar::RibbonBar(QWidget* parent)
     // No outer margins, so that the title row reaches the edges of the window for its
     // window buttons. The rows below have their own margins.
     auto layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 8);
+    layout->setContentsMargins(0, 4, 0, 8);
     layout->setSpacing(0);
 
     _homeButton->setObjectName(QStringLiteral("RibbonHomeButton"));
@@ -360,9 +360,9 @@ RibbonBar::RibbonBar(QWidget* parent)
     _homeButton->setCheckable(true);
     connect(_homeButton, &QToolButton::clicked, this, &RibbonBar::setHomeActive);
 
-    // Title row: quick access to file and edit commands, command search and help. On
-    // Windows it also replaces the title bar of the main window.
-    layout->addWidget(new RibbonTitleBar(this));
+    // Title row in the menu bar: quick access to file and edit commands, the menus,
+    // command search and help. On Windows it also replaces the title bar of the window.
+    new RibbonTitleBar(this);
 
     _tabRow->setContentsMargins(8, 0, 8, 0);
     _tabRow->setSpacing(6);
@@ -441,8 +441,13 @@ void RibbonBar::setupStyle()
         "background: %2; color: %7; border: none; border-top-left-radius: 10px;"
         " border-top-right-radius: 10px; padding: 7px 14px; font-weight: 500;"
     );
-    setStyleSheet(
+    const QString sheet =
         (QStringLiteral("#RibbonBar { background: %1; }"
+                        // The menu bar is the title row above the ribbon
+                        "QMenuBar { background: %1; color: %7; border: none; }"
+                        "QMenuBar::item { background: transparent; color: %7; padding: 8px 6px;"
+                        "  border-radius: 6px; }"
+                        "QMenuBar::item:selected, QMenuBar::item:pressed { background: %3; }"
                         "#RibbonPanel { background: %6; border-radius: 10px;"
                         "  border-top-left-radius: 0px; }"
                         "#RibbonGroupCaption { color: %7; font-weight: 600; }"
@@ -464,8 +469,9 @@ void RibbonBar::setupStyle()
              "  padding: 4px; background: transparent; }"
              "#RibbonSettingsButton:hover, #RibbonHelpButton:hover { background: %3; }"
              "#RibbonSettingsButton::menu-indicator { image: none; }"
-             "#RibbonQuickAccess { border: none; background: transparent; spacing: 1px; }"
-             "#RibbonQuickAccess QToolButton { border: none; border-radius: 5px; padding: 2px;"
+             "#RibbonQuickAccess { border: none; background: transparent; spacing: 0px;"
+             "  padding: 0px; }"
+             "#RibbonQuickAccess QToolButton { border: none; border-radius: 5px; padding: 1px;"
              "  background: transparent; }"
              "#RibbonQuickAccess QToolButton:hover { background: %3; }"
              "#RibbonWindowTitle { color: %7; }"
@@ -483,8 +489,14 @@ void RibbonBar::setupStyle()
                  QLatin1String(c.selected),
                  QLatin1String(c.accent),
                  QLatin1String(c.card),
-                 QLatin1String(c.text))
-    );
+                 QLatin1String(c.text));
+
+    // The parts of the title row are in the menu bar, outside of the ribbon, so the
+    // menu bar gets the same style sheet
+    setStyleSheet(sheet);
+    if (auto mainWindow = getMainWindow()) {
+        mainWindow->menuBar()->setStyleSheet(sheet);
+    }
 }
 
 void RibbonBar::changeEvent(QEvent* ev)

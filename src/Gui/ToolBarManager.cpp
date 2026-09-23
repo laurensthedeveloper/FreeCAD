@@ -507,13 +507,6 @@ void ToolBarManager::setupRibbon()
 
     mw->addToolBar(Qt::TopToolBarArea, host);
     mw->addToolBarBreak(Qt::TopToolBarArea);
-
-    // The menus are available from the settings button of the ribbon. The menu bar is
-    // collapsed rather than hidden: Qt ignores the shortcuts of actions that are only in
-    // the menus of a hidden menu bar.
-    if (hMainWindow->GetBool("RibbonHideMenuBar", true)) {
-        mw->menuBar()->setFixedHeight(0);
-    }
 }
 
 void ToolBarManager::setupConnection()

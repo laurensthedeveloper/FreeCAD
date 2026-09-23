@@ -30,6 +30,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMainWindow>
 #include <QMenuBar>
 #include <QPainter>
 #include <QShortcut>
@@ -195,39 +196,88 @@ class RibbonTitleBar::NativeFilter
 RibbonTitleBar::RibbonTitleBar(QWidget* parent)
     : QWidget(parent)
     , _logo(new QLabel(this))
-    , _title(new QLabel(this))
 {
     setObjectName(QStringLiteral("RibbonTitleBar"));
+    // Only the owner of the parts placed into the menu bar, not shown itself
+    hide();
 
-    auto layout = new QHBoxLayout(this);
-    layout->setContentsMargins(8, 0, 0, 4);
-    layout->setSpacing(6);
+    // Left of the menus: logo and small quick access buttons
+    _leftPart = new QWidget(this);
+    _leftPart->setObjectName(QStringLiteral("RibbonTitleLeft"));
+    auto left = new QHBoxLayout(_leftPart);
+    left->setContentsMargins(8, 0, 4, 0);
+    left->setSpacing(4);
 
     _logo->setObjectName(QStringLiteral("RibbonLogo"));
-    _logo->setPixmap(BitmapFactory().iconFromTheme("freecad").pixmap(QSize(20, 20)));
-    layout->addWidget(_logo);
+    _logo->setPixmap(BitmapFactory().iconFromTheme("freecad").pixmap(QSize(16, 16)));
+    left->addWidget(_logo);
+    setupQuickAccess(left);
 
-    setupQuickAccess(layout);
-    layout->addStretch();
+    // Right of the menus: search, help and the window buttons. The window title is not
+    // shown, the documents have their tabs in the document bar and the menus need the
+    // space.
+    _rightPart = new QWidget(this);
+    _rightPart->setObjectName(QStringLiteral("RibbonTitleRight"));
+    auto right = new QHBoxLayout(_rightPart);
+    right->setContentsMargins(8, 0, 0, 0);
+    right->setSpacing(6);
 
-    // The window title, e.g. the active document
-    _title->setObjectName(QStringLiteral("RibbonWindowTitle"));
-    _title->setTextFormat(Qt::PlainText);
-    layout->addWidget(_title);
-    layout->addStretch();
-
-    setupSearchAndHelp(layout);
+    setupSearchAndHelp(right);
 
     if (customFrameEnabled()) {
-        setupWindowButtons(layout);
+        setupWindowButtons(right);
         // The native window only exists once the main window is shown
         QMetaObject::invokeMethod(this, &RibbonTitleBar::enableCustomFrame, Qt::QueuedConnection);
     }
 
     if (QWidget* window = parent ? parent->window() : nullptr) {
         window->installEventFilter(this);
-        _title->setText(window->windowTitle());
     }
+
+    placeInMenuBar();
+}
+
+QMenuBar* RibbonTitleBar::menuBar() const
+{
+    auto mainWindow = qobject_cast<QMainWindow*>(window());
+    return mainWindow ? mainWindow->menuBar() : nullptr;
+}
+
+void RibbonTitleBar::placeInMenuBar()
+{
+    // The menu bar of the main window becomes the title row: its menus stay where they
+    // are, the parts of the title row go into its corners. Widgets already in a corner
+    // (toolbar areas of the menu bar) are kept next to them.
+    QMenuBar* bar = menuBar();
+    if (!bar) {
+        return;
+    }
+
+    auto wrap = [bar](Qt::Corner corner, QWidget* part, bool partFirst) {
+        auto container = new QWidget(bar);
+        container->setObjectName(
+            corner == Qt::TopLeftCorner ? QStringLiteral("RibbonTitleLeftCorner")
+                                        : QStringLiteral("RibbonTitleRightCorner")
+        );
+        auto layout = new QHBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+        QWidget* existing = bar->cornerWidget(corner);
+        if (partFirst) {
+            layout->addWidget(part);
+        }
+        if (existing) {
+            layout->addWidget(existing);
+        }
+        if (!partFirst) {
+            layout->addWidget(part);
+        }
+        bar->setCornerWidget(container, corner);
+        container->show();
+    };
+
+    wrap(Qt::TopLeftCorner, _leftPart, true);
+    wrap(Qt::TopRightCorner, _rightPart, false);
 }
 
 RibbonTitleBar::~RibbonTitleBar()
@@ -244,7 +294,7 @@ void RibbonTitleBar::setupQuickAccess(QHBoxLayout* layout)
     // Small icon only buttons, the file and edit commands used on every tab
     auto toolbar = new QToolBar(this);
     toolbar->setObjectName(QStringLiteral("RibbonQuickAccess"));
-    toolbar->setIconSize(QSize(16, 16));
+    toolbar->setIconSize(QSize(14, 14));
     toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
     toolbar->setMovable(false);
 
@@ -269,7 +319,7 @@ void RibbonTitleBar::setupSearchAndHelp(QHBoxLayout* layout)
     search->setToolTip(tr("Type at least three characters to find a command, "
                           "press Enter to run it"));
     search->setClearButtonEnabled(true);
-    search->setFixedWidth(260);
+    search->setFixedWidth(200);
     search->addAction(searchIcon(), QLineEdit::LeadingPosition);
 
     auto completer = new CommandCompleter(search, search);
@@ -405,31 +455,32 @@ void RibbonTitleBar::updateWindowButtons()
 
 bool RibbonTitleBar::isCaption(const QWidget* child, const QPoint& posInWindow) const
 {
-    // Only the height of the title row, and there only the parts without controls
-    const QRect rect(mapTo(window(), QPoint(0, 0)), size());
+    // Only the height of the title row, which is the menu bar, and there only the parts
+    // without controls
+    QMenuBar* bar = menuBar();
+    if (!bar) {
+        return false;
+    }
+    const QRect rect(bar->mapTo(window(), QPoint(0, 0)), bar->size());
     if (posInWindow.y() > rect.bottom()) {
         return false;
     }
-    return !child || child == window() || child == this || child == _logo || child == _title
-        || child == _windowButtons || child == parentWidget()
-        || qobject_cast<const QMenuBar*>(child)
-        || (qobject_cast<const QToolBar*>(child) && !isAncestorOf(child));
+
+    // The menu bar itself, except on its menus
+    if (child == bar) {
+        return !bar->actionAt(bar->mapFrom(window(), posInWindow));
+    }
+
+    return !child || child == window() || child == _logo || child == _windowButtons || child == _leftPart || child == _rightPart
+        || child->objectName().startsWith(QLatin1String("RibbonTitle"))
+        || (qobject_cast<const QToolBar*>(child) && !_leftPart->isAncestorOf(child));
 }
 
 bool RibbonTitleBar::eventFilter(QObject* source, QEvent* ev)
 {
-    if (source == window()) {
-        switch (ev->type()) {
-            case QEvent::WindowTitleChange:
-                _title->setText(window()->windowTitle());
-                break;
-            case QEvent::WindowStateChange:
-                // Queued, as the frame must not change from within this event
-                QMetaObject::invokeMethod(this, &RibbonTitleBar::updateCustomFrame, Qt::QueuedConnection);
-                break;
-            default:
-                break;
-        }
+    if (source == window() && ev->type() == QEvent::WindowStateChange) {
+        // Queued, as the frame must not change from within this event
+        QMetaObject::invokeMethod(this, &RibbonTitleBar::updateCustomFrame, Qt::QueuedConnection);
     }
     return QWidget::eventFilter(source, ev);
 }

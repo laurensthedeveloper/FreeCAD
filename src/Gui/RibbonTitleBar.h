@@ -30,14 +30,19 @@
 class QHBoxLayout;
 class QIcon;
 class QLabel;
+class QMenuBar;
 class QToolButton;
 
 namespace Gui
 {
 
 /**
- * The top row of the ribbon: logo, quick access to file and edit commands, the window
- * title, command search and help.
+ * The top row of the main window: logo, quick access to file and edit commands, the
+ * classic menus, command search and help.
+ *
+ * The menu bar of the main window is used as this row, so that all menus keep working
+ * as before (shortcuts, Alt key navigation, menus changed by workbenches). The other
+ * parts are placed into its corners.
  *
  * On Windows it can replace the title bar of the main window: the system caption is
  * removed and this row takes its place, with its own minimize, maximize and close
@@ -59,6 +64,8 @@ protected:
     bool eventFilter(QObject* source, QEvent* ev) override;
 
 private:
+    QMenuBar* menuBar() const;
+    void placeInMenuBar();
     void setupQuickAccess(QHBoxLayout* layout);
     void setupSearchAndHelp(QHBoxLayout* layout);
     void setupWindowButtons(QHBoxLayout* layout);
@@ -67,8 +74,9 @@ private:
     void updateWindowButtons();
     QIcon searchIcon() const;
 
+    QWidget* _leftPart = nullptr;
+    QWidget* _rightPart = nullptr;
     QLabel* _logo;
-    QLabel* _title;
     QWidget* _windowButtons = nullptr;
     QToolButton* _maximizeButton = nullptr;
     bool _customFrame = false;
