@@ -187,6 +187,8 @@ public:
     void loadWindowSettings();
     /// Saves the main window settings.
     void saveWindowSettings(bool canDelay = false);
+    /// Hides the bottom panels as Std_ToggleBottomPanels does, so that it shows them again
+    void hideBottomPanels();
     //@}
 
     /** @name Menu

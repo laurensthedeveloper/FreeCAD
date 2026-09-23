@@ -2236,6 +2236,40 @@ void MainWindow::loadWindowSettings()
     std::clog << "Toolbars restored" << std::endl;
 
     OverlayManager::instance()->restore();
+
+    // Start with the bottom panels (Report view, Python console) closed. Deferred until the
+    // startup is done, as activating the workbenches afterwards may show panels again.
+    if (d->hGrp->GetBool("HideBottomPanelsAtStartup", true)) {
+        QTimer::singleShot(0, this, &MainWindow::hideBottomPanels);
+    }
+}
+
+void MainWindow::hideBottomPanels()
+{
+    // The same as hiding them with Std_ToggleBottomPanels, which is not run itself to keep
+    // it out of the macro recording and the Python console
+    QStringList hiddenNames;
+    for (auto* panel : findChildren<QDockWidget*>()) {
+        if (dockWidgetArea(panel) == Qt::BottomDockWidgetArea && panel->isVisible()) {
+            panel->hide();
+            hiddenNames.append(panel->objectName());
+        }
+    }
+    if (!hiddenNames.isEmpty()) {
+        App::GetApplication()
+            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Gui")
+            ->SetASCII("HiddenBottomWidgets", hiddenNames.join(QStringLiteral(";;")).toStdString());
+    }
+
+    // Also when no panel was open, as the button starts checked
+    if (auto* button = findChild<QToolButton*>(QStringLiteral("toggleBottomPanelsButton"))) {
+        QSignalBlocker blocker(button);
+        button->setChecked(false);
+    }
+    auto* command = Application::Instance->commandManager().getCommandByName("Std_ToggleBottomPanels");
+    if (auto* action = command ? command->getAction() : nullptr) {
+        action->setBlockedChecked(false);
+    }
 }
 
 bool MainWindow::isRestoringWindowState() const
