@@ -225,14 +225,12 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
         return;
     }
 
-    // The light spot follows the view on every frame. Notifications are off, as the
-    // new values are used by this traversal already and must not trigger another one.
-    const SbVec3f glowTranslation(center[0], center[1], 0.0F);
+    // The light spot is centered on the origin and scaled with the zoom level on every
+    // frame. Notifications are off, as the new scale is used by this traversal already
+    // and must not trigger another one.
     const SbVec3f glowScale(viewSize * glowSize, viewSize * glowSize, 1.0F);
-    if (glowTransform->translation.getValue() != glowTranslation
-        || glowTransform->scaleFactor.getValue() != glowScale) {
+    if (glowTransform->scaleFactor.getValue() != glowScale) {
         const SbBool notify = glowTransform->enableNotify(FALSE);
-        glowTransform->translation.setValue(glowTranslation);
         glowTransform->scaleFactor.setValue(glowScale);
         glowTransform->enableNotify(notify);
     }
