@@ -844,6 +844,8 @@ void ToolBarManager::setup(ToolBarItem* toolBarItems)
 
     if (ribbonBar) {
         ribbonBar->setOrder(toolbarNames);
+        // Show the commands of the workbench that was just activated
+        ribbonBar->setHomeActive(false);
     }
 
     setMovable(!areToolBarsLocked());

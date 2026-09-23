@@ -24,6 +24,7 @@
 #pragma once
 
 #include <map>
+#include <vector>
 
 #include <QPointer>
 #include <QWidget>
@@ -33,6 +34,7 @@ class QHBoxLayout;
 class QLabel;
 class QScrollArea;
 class QToolBar;
+class QToolButton;
 
 namespace Gui
 {
@@ -54,16 +56,21 @@ public:
         return _toolbar;
     }
 
+    /// Shows the group only if it belongs to the ribbon page currently shown
+    void setOnActivePage(bool onActivePage);
+
 protected:
     bool eventFilter(QObject* source, QEvent* ev) override;
     void resizeEvent(QResizeEvent* ev) override;
 
 private:
     void updateCaption();
+    void updateVisibility();
     static void updateIconText(QAction* action);
 
     QPointer<QToolBar> _toolbar;
     QLabel* _caption;
+    bool _onActivePage = true;
 };
 
 /**
@@ -91,8 +98,10 @@ private:
 /**
  * Ribbon style replacement for the top toolbar area.
  *
- * The upper row holds the workbench selector, the lower row shows the toolbars of the
- * active workbench as captioned groups with their text under the icons. The groups keep
+ * The upper row holds the Home button and the workbench selector, the lower row shows the
+ * toolbars as captioned groups with their text under the icons. The Home page has its own
+ * set of general commands (File, Edit, ...), the workbench page shows the toolbars of the
+ * active workbench except the general ones, which would duplicate Home. The groups keep
  * their natural size and scroll horizontally when they do not fit. Toolbars keep being
  * created and managed by ToolBarManager; the ribbon only hosts them.
  */
@@ -109,20 +118,29 @@ public:
     bool contains(const QWidget* widget) const;
     /// Sorts the groups to follow the given toolbar names. Unlisted groups go last.
     void setOrder(const QStringList& names);
+    /// Switches between the Home page and the page of the active workbench
+    void setHomeActive(bool active);
 
 protected:
     void contextMenuEvent(QContextMenuEvent* ev) override;
     bool eventFilter(QObject* source, QEvent* ev) override;
 
 private:
+    static bool isGeneralToolBar(const QToolBar* toolbar);
+    void buildHomePage();
     void onGroupDestroyed(QObject* group);
+    void onWorkbenchTabClicked();
+    void connectWorkbenchTabs();
     void updateScrollAreaHeight();
 
+    bool _homeActive = false;
+    QToolButton* _homeButton;
     QHBoxLayout* _tabRow;
     RibbonPanel* _panel;
     QScrollArea* _scrollArea;
     QPointer<QToolBar> _workbenchToolBar;
     std::map<const QToolBar*, QPointer<RibbonGroup>> _groups;
+    std::vector<QPointer<RibbonGroup>> _homeGroups;
 };
 
 }  // namespace Gui

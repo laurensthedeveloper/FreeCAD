@@ -21,7 +21,10 @@
  *                                                                          *
  ***************************************************************************/
 
+#include <vector>
+
 #include <QActionEvent>
+#include <QApplication>
 #include <QContextMenuEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -30,12 +33,18 @@
 #include <QPainter>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QTabBar>
 #include <QToolBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidgetAction>
 
 #include "RibbonBar.h"
+#include "Application.h"
+#include "BitmapFactory.h"
+#include "Command.h"
+#include "WorkbenchManager.h"
 
 using namespace Gui;
 
@@ -52,6 +61,77 @@ bool takeFromMainWindow(QToolBar* toolbar)
         }
     }
     return shown;
+}
+
+// Removes the name of the active workbench from the start of a toolbar title, e.g.
+// "Part Design Helper Features" becomes "Helper Features" in the PartDesign workbench.
+// The whole title is kept if nothing would be left.
+QString withoutWorkbenchPrefix(const QString& title)
+{
+    QString key = QString::fromStdString(WorkbenchManager::instance()->activeName());
+    if (key.endsWith(QLatin1String("Workbench"))) {
+        key.chop(9);
+    }
+    if (key.isEmpty()) {
+        return title;
+    }
+
+    const QStringList words = title.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    QString joined;
+    for (int i = 0; i + 1 < words.size() && joined.size() < key.size(); ++i) {
+        joined += words[i];
+        if (joined.compare(key, Qt::CaseInsensitive) == 0) {
+            QString rest = words.mid(i + 1).join(QLatin1Char(' '));
+            rest[0] = rest[0].toUpper();
+            return rest;
+        }
+    }
+    return title;
+}
+
+struct HomeSection
+{
+    const char* title;
+    std::vector<const char*> commands;
+};
+
+// Content of the Home page. Commands that are not available (e.g. from a module that is
+// not installed) are skipped.
+const std::vector<HomeSection>& homeSections()
+{
+    static const std::vector<HomeSection> sections {
+        {QT_TRANSLATE_NOOP("Workbench", "File"),
+         {"Std_New",
+          "Std_Open",
+          "Std_Save",
+          "Std_SaveAs",
+          "Separator",
+          "Std_Import",
+          "Std_Export",
+          "Separator",
+          "Std_Print",
+          "Std_PrintPdf"}},
+        {QT_TRANSLATE_NOOP("Workbench", "Edit"),
+         {"Std_Undo",
+          "Std_Redo",
+          "Separator",
+          "Std_Cut",
+          "Std_Copy",
+          "Std_Paste",
+          "Std_Delete",
+          "Separator",
+          "Std_SelectAll",
+          "Std_Refresh"}},
+        {QT_TRANSLATE_NOOP("Workbench", "Structure"),
+         {"Std_Part", "Std_Group", "Std_LinkActions", "Std_VarSet"}},
+        {QT_TRANSLATE_NOOP("Workbench", "Macro"),
+         {"Std_DlgMacroRecord", "Std_DlgMacroExecute", "Std_DlgMacroExecuteDirect"}},
+        {QT_TRANSLATE_NOOP("Workbench", "Tools"),
+         {"Std_DlgPreferences", "Std_DlgCustomize", "Std_DlgParameter", "Std_AddonMgr"}},
+        {QT_TRANSLATE_NOOP("Workbench", "Help"),
+         {"Std_OnlineHelp", "Std_WhatsThis", "Std_FreeCADForum", "Std_About"}},
+    };
+    return sections;
 }
 
 // Builds the button label shown under the icon from the command's menu text. The text is
@@ -128,7 +208,7 @@ RibbonGroup::RibbonGroup(QToolBar* toolbar, QWidget* parent)
     toolbar->setVisible(shown);
 
     updateCaption();
-    setVisible(shown);
+    updateVisibility();
 
     toolbar->installEventFilter(this);
     connect(toolbar, &QObject::destroyed, this, &QObject::deleteLater);
@@ -141,7 +221,8 @@ void RibbonGroup::updateCaption()
     }
 
     const QString title = _toolbar->windowTitle();
-    const QString elided = _caption->fontMetrics().elidedText(title, Qt::ElideRight, _caption->width());
+    const QString caption = withoutWorkbenchPrefix(title);
+    const QString elided = _caption->fontMetrics().elidedText(caption, Qt::ElideRight, _caption->width());
     _caption->setText(elided);
     _caption->setToolTip(elided == title ? QString() : title);
 }
@@ -160,6 +241,19 @@ void RibbonGroup::updateIconText(QAction* action)
     }
 }
 
+void RibbonGroup::setOnActivePage(bool onActivePage)
+{
+    _onActivePage = onActivePage;
+    updateVisibility();
+    // The caption depends on the active workbench, which may have changed
+    updateCaption();
+}
+
+void RibbonGroup::updateVisibility()
+{
+    setVisible(_toolbar && !_toolbar->isHidden() && _onActivePage);
+}
+
 void RibbonGroup::resizeEvent(QResizeEvent* ev)
 {
     QWidget::resizeEvent(ev);
@@ -173,7 +267,7 @@ bool RibbonGroup::eventFilter(QObject* source, QEvent* ev)
             // Sent on explicit show/hide of the toolbar, even while the group itself is hidden
             case QEvent::ShowToParent:
             case QEvent::HideToParent:
-                setVisible(!_toolbar->isHidden());
+                updateVisibility();
                 break;
             case QEvent::WindowTitleChange:
                 updateCaption();
@@ -238,6 +332,7 @@ void RibbonPanel::paintEvent(QPaintEvent* ev)
 
 RibbonBar::RibbonBar(QWidget* parent)
     : QWidget(parent)
+    , _homeButton(new QToolButton(this))
     , _tabRow(new QHBoxLayout())
     , _panel(new RibbonPanel(this))
     , _scrollArea(new QScrollArea(this))
@@ -249,7 +344,18 @@ RibbonBar::RibbonBar(QWidget* parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    _homeButton->setObjectName(QStringLiteral("RibbonHomeButton"));
+    _homeButton->setText(tr("Home"));
+    _homeButton->setToolTip(tr("Shows the general commands, such as file and edit commands"));
+    _homeButton->setIcon(BitmapFactory().iconFromTheme("Std_ViewHome"));
+    _homeButton->setIconSize(QSize(16, 16));  // same as the workbench tabs
+    _homeButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    _homeButton->setCheckable(true);
+    _homeButton->setAutoRaise(true);
+    connect(_homeButton, &QToolButton::clicked, this, &RibbonBar::setHomeActive);
+
     _tabRow->setContentsMargins(0, 0, 0, 0);
+    _tabRow->addWidget(_homeButton);
     _tabRow->addStretch();
     layout->addLayout(_tabRow);
 
@@ -278,6 +384,11 @@ RibbonBar::RibbonBar(QWidget* parent)
 bool RibbonBar::eventFilter(QObject* source, QEvent* ev)
 {
     auto bar = _scrollArea->horizontalScrollBar();
+
+    // The workbench tabs are added to the workbench toolbar after it moved into the ribbon
+    if (source == _workbenchToolBar && ev->type() == QEvent::ActionAdded) {
+        QMetaObject::invokeMethod(this, &RibbonBar::connectWorkbenchTabs, Qt::QueuedConnection);
+    }
 
     if (source == _scrollArea->viewport() && ev->type() == QEvent::Wheel) {
         auto wheel = static_cast<QWheelEvent*>(ev);
@@ -317,18 +428,115 @@ void RibbonBar::addToolBar(QToolBar* toolbar)
         bool shown = takeFromMainWindow(toolbar);
         toolbar->setOrientation(Qt::Horizontal);
         toolbar->setMovable(false);
-        _tabRow->insertWidget(0, toolbar);
+        _tabRow->insertWidget(_tabRow->indexOf(_homeButton) + 1, toolbar);
         toolbar->setVisible(shown);
         _workbenchToolBar = toolbar;
+        toolbar->installEventFilter(this);
+        connectWorkbenchTabs();
         return;
     }
 
     auto group = new RibbonGroup(toolbar, _panel);
     auto layout = _panel->groupLayout();
     layout->insertWidget(layout->count() - 1, group);  // keep the trailing stretch last
+    group->setOnActivePage(!_homeActive && !isGeneralToolBar(toolbar));
     _groups[toolbar] = group;
 
     connect(group, &QObject::destroyed, this, &RibbonBar::onGroupDestroyed);
+}
+
+bool RibbonBar::isGeneralToolBar(const QToolBar* toolbar)
+{
+    // The general toolbars of the standard workbench, matched by their untranslated name.
+    // Their commands are on the Home page, so they are not shown on the workbench pages.
+    static const QStringList generalToolBars {
+        QStringLiteral("File"),
+        QStringLiteral("Edit"),
+        QStringLiteral("Clipboard"),
+        QStringLiteral("Macro"),
+        QStringLiteral("Structure"),
+        QStringLiteral("Help"),
+    };
+    return generalToolBars.contains(toolbar->objectName());
+}
+
+void RibbonBar::buildHomePage()
+{
+    if (!_homeGroups.empty()) {
+        return;
+    }
+
+    // Built on first use, so that commands registered late by modules are available
+    auto& commandManager = Application::Instance->commandManager();
+    auto layout = _panel->groupLayout();
+
+    for (const HomeSection& section : homeSections()) {
+        auto toolbar = new QToolBar(_panel);
+        toolbar->setObjectName(QStringLiteral("RibbonHome_") + QLatin1String(section.title));
+        toolbar->setWindowTitle(QApplication::translate("Workbench", section.title));
+
+        for (const char* command : section.commands) {
+            if (qstrcmp(command, "Separator") == 0) {
+                toolbar->addSeparator();
+            }
+            else if (commandManager.getCommandByName(command)) {
+                commandManager.addTo(command, toolbar);
+            }
+        }
+
+        auto group = new RibbonGroup(toolbar, _panel);
+        layout->insertWidget(layout->count() - 1, group);  // keep the trailing stretch last
+        toolbar->show();
+        _homeGroups.emplace_back(group);
+    }
+}
+
+void RibbonBar::setHomeActive(bool active)
+{
+    _homeActive = active;
+    _homeButton->setChecked(active);
+
+    if (active) {
+        buildHomePage();
+    }
+
+    for (const auto& group : _homeGroups) {
+        if (group) {
+            group->setOnActivePage(active);
+        }
+    }
+
+    for (const auto& [toolbar, group] : _groups) {
+        if (group && group->toolBar()) {
+            group->setOnActivePage(!active && !isGeneralToolBar(group->toolBar()));
+        }
+    }
+
+    _scrollArea->horizontalScrollBar()->setValue(0);
+    _panel->update();
+}
+
+void RibbonBar::connectWorkbenchTabs()
+{
+    if (!_workbenchToolBar) {
+        return;
+    }
+
+    // Clicking a workbench tab, also the one of the active workbench, leaves the Home page
+    for (auto tabBar : _workbenchToolBar->findChildren<QTabBar*>()) {
+        connect(
+            tabBar,
+            &QTabBar::tabBarClicked,
+            this,
+            &RibbonBar::onWorkbenchTabClicked,
+            Qt::UniqueConnection
+        );
+    }
+}
+
+void RibbonBar::onWorkbenchTabClicked()
+{
+    setHomeActive(false);
 }
 
 bool RibbonBar::contains(const QWidget* widget) const
@@ -346,9 +554,23 @@ bool RibbonBar::contains(const QWidget* widget) const
 
 void RibbonBar::setOrder(const QStringList& names)
 {
+    // The view toolbars go last, after the commands of the workbench
+    static const QStringList trailing {QStringLiteral("View"), QStringLiteral("Individual Views")};
+    QStringList ordered;
+    for (const QString& name : names) {
+        if (!trailing.contains(name)) {
+            ordered << name;
+        }
+    }
+    for (const QString& name : trailing) {
+        if (names.contains(name)) {
+            ordered << name;
+        }
+    }
+
     auto layout = _panel->groupLayout();
     int index = 0;
-    for (const QString& name : names) {
+    for (const QString& name : std::as_const(ordered)) {
         for (const auto& [toolbar, group] : _groups) {
             if (!group || !group->toolBar() || group->toolBar()->objectName() != name) {
                 continue;
@@ -393,10 +615,11 @@ void RibbonBar::contextMenuEvent(QContextMenuEvent* ev)
 
     auto layout = _panel->groupLayout();
     for (int i = 0; i < layout->count(); ++i) {
-        if (auto group = qobject_cast<RibbonGroup*>(layout->itemAt(i)->widget())) {
-            if (group->toolBar()) {
-                addToggle(group->toolBar());
-            }
+        // Only the workbench toolbars that can actually be shown in the ribbon
+        auto group = qobject_cast<RibbonGroup*>(layout->itemAt(i)->widget());
+        auto toolbar = group ? group->toolBar() : nullptr;
+        if (toolbar && _groups.count(toolbar) && !isGeneralToolBar(toolbar)) {
+            addToggle(toolbar);
         }
     }
 
