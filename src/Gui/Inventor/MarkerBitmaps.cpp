@@ -24,6 +24,7 @@
 
 
 #include <Inventor/nodes/SoMarkerSet.h>
+#include <algorithm>
 #include <vector>
 
 
@@ -1393,6 +1394,13 @@ int MarkerBitmaps::getMarkerIndex(const std::string& name, int px)
     }
 
     return static_cast<int>(SoMarkerSet::CIRCLE_FILLED_7_7);
+}
+
+bool MarkerBitmaps::isMarker(const std::string& name, int index)
+{
+    return std::ranges::any_of(markerIndex, [&](const auto& it) {
+        return it.second == index && it.first.first == name;
+    });
 }
 
 std::list<int> MarkerBitmaps::getSupportedSizes(const std::string& name)

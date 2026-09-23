@@ -80,6 +80,7 @@
 #include "Inventor/SoFCScreenSpaceGroup.h"
 #include "Inventor/SoFCBackgroundGradient.h"
 #include "Inventor/SoFCGroundGrid.h"
+#include "Inventor/SoFCMarkerSet.h"
 #include "Inventor/SoFCBoundingBox.h"
 #include "Inventor/SoNaviCube.h"
 #include "Inventor/SoMouseWheelEvent.h"
@@ -114,6 +115,7 @@ void Gui::SoFCDB::init()
     SoFCScreenSpaceGroup::initClass();
     SoFCBackgroundGradient::initClass();
     SoFCGroundGrid::initClass();
+    SoFCMarkerSet::initClass();
     SoFCBoundingBox::initClass();
     SoFCSelection::initClass();
     SoFCUnifiedSelection::initClass();
@@ -251,6 +253,7 @@ void Gui::SoFCDB::finish()
     SoFCColorBar::finish();
     SoFCBackgroundGradient::finish();
     SoFCGroundGrid::finish();
+    SoFCMarkerSet::finish();
     SoFCBoundingBox::finish();
     SoFCSelection::finish();
     SoFCPreselectionAction::finish();

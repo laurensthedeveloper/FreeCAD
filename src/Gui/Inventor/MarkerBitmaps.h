@@ -42,6 +42,8 @@ public:
     static void initClass();
     static int getMarkerIndex(const std::string&, int px);
     static std::list<int> getSupportedSizes(const std::string&);
+    //! Whether the marker @a index is one of the sizes of the marker @a name
+    static bool isMarker(const std::string& name, int index);
 
 private:
     static void createBitmap(const std::string&, int px, int width, int height, const char* marker);

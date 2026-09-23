@@ -1077,6 +1077,7 @@ SET(Inventor_CPP_SRCS
     Inventor/SoFCScreenSpaceGroup.cpp
     Inventor/SoFCBackgroundGradient.cpp
     Inventor/SoFCGroundGrid.cpp
+    Inventor/SoFCMarkerSet.cpp
     Inventor/SoFCBoundingBox.cpp
     Inventor/SoNaviCube.cpp
     Inventor/SoMouseWheelEvent.cpp
@@ -1120,6 +1121,7 @@ SET(Inventor_SRCS
     Inventor/SoFCScreenSpaceGroup.h
     Inventor/SoFCBackgroundGradient.h
     Inventor/SoFCGroundGrid.h
+    Inventor/SoFCMarkerSet.h
     Inventor/SoFCBoundingBox.h
     Inventor/SoNaviCube.h
     Inventor/SoMouseWheelEvent.h

@@ -32,6 +32,7 @@
 
 #include <App/Application.h>
 #include <Gui/Inventor/MarkerBitmaps.h>
+#include <Gui/Inventor/SoFCMarkerSet.h>
 #include <Gui/ViewProviderBuilder.h>
 #include <Gui/Selection/SoFCSelection.h>
 #include <Mod/PartDesign/App/DatumPoint.h>
@@ -61,9 +62,9 @@ void ViewProviderDatumPoint::attach(App::DocumentObject* obj)
                                .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
                                ->GetInt("MarkerSize", 9);
     // Using a marker gives a larger point.
-    auto* marker = new SoMarkerSet();
+    auto* marker = new Gui::SoFCMarkerSet();
     marker->numPoints = 1;
-    marker->markerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("DIAMOND_FILLED", markerSize);
+    marker->markerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", markerSize);
 
     auto* pcHighlight = Gui::ViewProviderBuilder::createSelection();
     pcHighlight->style = Gui::SoFCSelection::EMISSIVE_DIFFUSE;

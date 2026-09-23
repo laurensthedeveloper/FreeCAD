@@ -23,14 +23,14 @@
 
 
 #include <App/Application.h>
-#include <Inventor/nodes/SoSphere.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoIndexedLineSet.h>
-#include <Inventor/nodes/SoPickStyle.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoTranslation.h>
 
 
+#include "Inventor/MarkerBitmaps.h"
+#include "Inventor/SoFCMarkerSet.h"
 #include "ViewProviderPoint.h"
 #include "ViewProviderCoordinateSystem.h"
 
@@ -59,15 +59,12 @@ void ViewProviderPoint::attach(App::DocumentObject* obj)
     pCoords->point.setValue(point);
     sep->addChild(pCoords);
 
-    static const float size = App::GetApplication()
-                                  .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
-                                  ->GetFloat("DatumPointSize", 2.5);
-    auto sphere = new SoSphere();
-    sphere->radius.setValue(size);
-    sep->addChild(sphere);
-
-    // Add pick style to define how the point can be selected
-    auto ps = new SoPickStyle();
-    ps->style.setValue(SoPickStyle::BOUNDING_BOX);
-    sep->addChild(ps);
+    // A round dot of constant size on screen, drawn like the points in sketches
+    static const int markerSize = App::GetApplication()
+                                      .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+                                      ->GetInt("MarkerSize", 9);
+    auto marker = new SoFCMarkerSet();
+    marker->numPoints = 1;
+    marker->markerIndex = Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", markerSize);
+    sep->addChild(marker);
 }

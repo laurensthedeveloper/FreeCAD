@@ -42,6 +42,7 @@
 #include <Inventor/nodes/SoTranslation.h>
 
 #include <Base/Color.h>
+#include <Gui/Inventor/SoFCMarkerSet.h>
 #include <Gui/ViewParams.h>
 #include <Gui/Inventor/SmSwitchboard.h>
 #include <Mod/Sketcher/App/GeoList.h>
@@ -421,19 +422,19 @@ struct EditModeScenegraphNodes
     std::vector<SoMaterial*> PointsMaterials;
     std::vector<SoCoordinate3*> PointsCoordinate;
     std::vector<SoDrawStyle*> PointsDrawStyle;
-    std::vector<SoMarkerSet*> PointSet;
+    std::vector<Gui::SoFCMarkerSet*> PointSet;
     //@}
 
     /** @name Origin Point nodes*/
     //@{
     SoMaterial* OriginPointMaterial;
     SoCoordinate3* OriginPointCoordinate;
-    SoMarkerSet* OriginPointSet;
+    Gui::SoFCMarkerSet* OriginPointSet;
     SoDrawStyle* OriginPointDrawStyle;
 
     // occluded
     SoMaterial* OriginPointMaterialOccluded;
-    SoMarkerSet* OriginPointSetOccluded;
+    Gui::SoFCMarkerSet* OriginPointSetOccluded;
     SoDrawStyle* OriginPointDrawStyleOccluded;
     SoCoordinate3* OriginPointCoordinateOccluded;
     //@}

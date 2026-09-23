@@ -1822,7 +1822,7 @@ void EditModeCoinManager::createEditModeInventorNodes()
     editModeScenegraphNodes.OriginPointCoordinate->point.set1Value(0, SbVec3f(0.0f, 0.0f, 0.0f));
     visibleOrigin->addChild(editModeScenegraphNodes.OriginPointCoordinate);
 
-    editModeScenegraphNodes.OriginPointSet = new SoMarkerSet;
+    editModeScenegraphNodes.OriginPointSet = new Gui::SoFCMarkerSet;
     editModeScenegraphNodes.OriginPointSet->setName("OriginPointSet");
     editModeScenegraphNodes.OriginPointSet->markerIndex
         = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", drawingParameters.markerSize);
@@ -1912,7 +1912,7 @@ void EditModeCoinManager::createEditModeInventorNodes()
     );
     occludedOverlayRoot->addChild(editModeScenegraphNodes.OriginPointMaterialOccluded);
 
-    editModeScenegraphNodes.OriginPointSetOccluded = new SoMarkerSet;
+    editModeScenegraphNodes.OriginPointSetOccluded = new Gui::SoFCMarkerSet;
     editModeScenegraphNodes.OriginPointSetOccluded->setName("OriginPointSetOccluded");
     editModeScenegraphNodes.OriginPointSetOccluded->markerIndex
         = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", drawingParameters.markerSize);

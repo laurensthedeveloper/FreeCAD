@@ -218,6 +218,10 @@ void EditModeGeometryCoinManager::updateGeometryColor(
         editModeScenegraphNodes.OriginPointMaterial->diffuseColor
             = drawingParameters.FullyConstraintElementColor;
     }
+    const int originHighlight = preselectcross == 0 ? 0 : -1;
+    if (editModeScenegraphNodes.OriginPointSet->highlightIndex.getValue() != originHighlight) {
+        editModeScenegraphNodes.OriginPointSet->highlightIndex = originHighlight;
+    }
     editModeScenegraphNodes.OriginPointCoordinate->point.set1Value(
         0,
         SbVec3f(0, 0, viewOrientationFactor * drawingParameters.zRootPoint)
@@ -380,6 +384,7 @@ void EditModeGeometryCoinManager::updateGeometryColor(
         };
 
         MultiFieldId preselectpointmfid;
+        int highlightedPoint = -1;
 
         if (preselectcross == 0) {
             editModeScenegraphNodes.OriginPointMaterial->diffuseColor = drawingParameters.PreselectColor;
@@ -390,6 +395,7 @@ void EditModeGeometryCoinManager::updateGeometryColor(
                 && preselectpointmfid.fieldIndex < PtNum) {
 
                 pcolor[preselectpointmfid.fieldIndex] = drawingParameters.PreselectColor;
+                highlightedPoint = preselectpointmfid.fieldIndex;
 
                 raisePoint(
                     pverts[preselectpointmfid.fieldIndex],
@@ -431,6 +437,12 @@ void EditModeGeometryCoinManager::updateGeometryColor(
                 }
             }
         );
+
+        // The preselected point is drawn larger and with a halo
+        auto pointSet = editModeScenegraphNodes.PointSet[l];
+        if (pointSet->highlightIndex.getValue() != highlightedPoint) {
+            pointSet->highlightIndex = highlightedPoint;
+        }
 
         // update colors and rendering height of the curves
 
@@ -692,7 +704,7 @@ void EditModeGeometryCoinManager::createEditModePointInventorNodes()
             * drawingParameters.pixelScalingFactor;
         sep->addChild(editModeScenegraphNodes.PointsDrawStyle[i]);
 
-        auto pointset = new SoMarkerSet;
+        auto pointset = new Gui::SoFCMarkerSet;
         editModeScenegraphNodes.PointSet.push_back(pointset);
         editModeScenegraphNodes.PointSet[i]->setName(concat("PointSet", i).c_str());
         editModeScenegraphNodes.PointSet[i]->markerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex(
