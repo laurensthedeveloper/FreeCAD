@@ -259,6 +259,8 @@ void RibbonTitleBar::placeInMenuBar()
             corner == Qt::TopLeftCorner ? QStringLiteral("RibbonTitleLeftCorner")
                                         : QStringLiteral("RibbonTitleRightCorner")
         );
+        // Both corners as high as the window buttons, so that they line up with the menus
+        container->setFixedHeight(32);
         auto layout = new QHBoxLayout(container);
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(0);
