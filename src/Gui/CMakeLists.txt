@@ -1156,6 +1156,7 @@ SOURCE_GROUP("View3D\\Inventor" FILES ${Inventor_SRCS})
 # The widget sources
 SET(Widget_CPP_SRCS
     ComboLinks.cpp
+    DocumentBar.cpp
     FileDialog.cpp
     MainWindow.cpp
     MainWindowPy.cpp
@@ -1187,6 +1188,7 @@ if(WIN32)
 endif(WIN32)
 SET(Widget_HPP_SRCS
     ComboLinks.h
+    DocumentBar.h
     FileDialog.h
     FileDialogInternal.h
     MainWindow.h

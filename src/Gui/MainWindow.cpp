@@ -110,6 +110,7 @@
 #include "SelectionView.h"
 #include "SplashScreen.h"
 #include "StatusBarLabel.h"
+#include "DocumentBar.h"
 #include "ToolBarAreaWidget.h"
 #include "ToolBarManager.h"
 #include "ToolBoxManager.h"
@@ -339,6 +340,7 @@ struct MainWindowP
     QTimer saveStateTimer;
     QTimer restoreStateTimer;
     QMdiArea* mdiArea;
+    QPointer<DocumentBar> documentBar;
     QPointer<MDIView> activeView;
     QSignalMapper* windowMapper;
     SplashScreen* splashscreen;
@@ -427,7 +429,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     setDockOptions(dockOptions() | QMainWindow::GroupedDragging);
 
     // Create the layout containing the workspace and a tab bar
-    d->mdiArea = new QMdiArea();
+    auto mdiArea = new MdiArea();
+    d->mdiArea = mdiArea;
     // Movable tabs
     d->mdiArea->setTabsMovable(true);
     d->mdiArea->setTabPosition(QTabWidget::South);
@@ -446,6 +449,12 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags f)
     d->mdiArea->setActivationOrder(QMdiArea::ActivationHistoryOrder);
 #endif
     d->mdiArea->setBackground(QBrush(QColor(160, 160, 160)));
+    // The document bar replaces the tab bar. It must exist before the status bar items
+    // are registered, as some of them are placed into it.
+    if (d->hGrp->GetBool("DocumentBar", true)) {
+        d->documentBar = new DocumentBar(mdiArea);
+        mdiArea->setDocumentBar(d->documentBar);
+    }
     setCentralWidget(d->mdiArea);
 
     statusBar()->setObjectName(QStringLiteral("statusBar"));
@@ -2804,6 +2813,9 @@ void MainWindow::removeStatusBarItem(const QByteArray& id)
     if (it->widget && it->placed) {
         statusBar()->removeWidget(it->widget);
     }
+    if (it->widget && d->documentBar) {
+        d->documentBar->removeStatusItem(it->widget);
+    }
     items.erase(it);
     relayoutStatusBar();
 }
@@ -2822,6 +2834,9 @@ void MainWindow::relayoutStatusBar()
             if (item.placed) {
                 sb->removeWidget(item.widget);
                 item.placed = false;
+            }
+            if (d->documentBar) {
+                d->documentBar->removeStatusItem(item.widget);
             }
         }
     }
@@ -2842,13 +2857,20 @@ void MainWindow::relayoutStatusBar()
         if (!item.widget) {
             continue;
         }
-        if (item.spec.slot == StatusBarSlot::Left) {
-            sb->addWidget(item.widget, item.spec.stretch);
+        // Some items are shown in the document bar instead. They are not held by the
+        // status bar, so 'placed' stays false for them.
+        if (d->documentBar && DocumentBar::hostsStatusItem(item.spec.id)) {
+            d->documentBar->addStatusItem(item.widget);
         }
         else {
-            sb->addPermanentWidget(item.widget, item.spec.stretch);
+            if (item.spec.slot == StatusBarSlot::Left) {
+                sb->addWidget(item.widget, item.spec.stretch);
+            }
+            else {
+                sb->addPermanentWidget(item.widget, item.spec.stretch);
+            }
+            item.placed = true;
         }
-        item.placed = true;
 
         if (ownsVisibility(item.widget)) {
             // Progress bar: registry drives userEnabled; actual visibility stays
