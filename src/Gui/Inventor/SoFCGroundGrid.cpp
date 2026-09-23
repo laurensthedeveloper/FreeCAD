@@ -101,6 +101,7 @@ SoFCGroundGrid::SoFCGroundGrid()
     // The geometry depends on the camera, so it must not be cached
     renderCaching = SoSeparator::OFF;
     boundingBoxCaching = SoSeparator::OFF;
+    renderCulling = SoSeparator::OFF;
 
     // The lines are semi-transparent. With the sorted transparency of the viewer,
     // transparent lines are not drawn at all, so they are blended right away.
@@ -119,7 +120,11 @@ SoFCGroundGrid::SoFCGroundGrid()
     // A soft light spot on the ground below the grid lines. It does not write the depth
     // buffer, so it never hides the grid or the objects.
     auto glowSeparator = new SoSeparator;
+    // Its scale changes without notification, so a cached bounding box would be outdated
+    // and the spot culled as soon as that box leaves the view
     glowSeparator->renderCaching = SoSeparator::OFF;
+    glowSeparator->boundingBoxCaching = SoSeparator::OFF;
+    glowSeparator->renderCulling = SoSeparator::OFF;
     auto glowDepth = new SoDepthBuffer;
     glowDepth->write = FALSE;
     glowDepth->function = SoDepthBuffer::LESS;
