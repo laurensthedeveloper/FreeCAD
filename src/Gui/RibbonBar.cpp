@@ -38,12 +38,15 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QLineEdit>
+#include <QShortcut>
 #include <QWidgetAction>
 
 #include "RibbonBar.h"
 #include "Application.h"
 #include "BitmapFactory.h"
 #include "Command.h"
+#include "CommandCompleter.h"
 #include "WorkbenchManager.h"
 
 using namespace Gui;
@@ -297,20 +300,25 @@ RibbonPanel::RibbonPanel(QWidget* parent)
     , _layout(new QHBoxLayout(this))
 {
     setObjectName(QStringLiteral("RibbonPanel"));
-    _layout->setContentsMargins(4, 2, 4, 2);
+    setAttribute(Qt::WA_StyledBackground);
+    _layout->setContentsMargins(8, 4, 8, 4);
     _layout->setSpacing(12);
     _layout->addStretch();
 }
 
 void RibbonPanel::paintEvent(QPaintEvent* ev)
 {
-    QWidget::paintEvent(ev);
+    Q_UNUSED(ev)
+    QPainter painter(this);
+
+    // The rounded card background from the style sheet of the ribbon
+    QStyleOption option;
+    option.initFrom(this);
+    style()->drawPrimitive(QStyle::PE_Widget, &option, &painter, this);
 
     // Derived from the text color so that the separator is visible in light and dark themes
     QColor color = palette().color(QPalette::WindowText);
     color.setAlpha(60);
-
-    QPainter painter(this);
     painter.setPen(color);
 
     bool first = true;
@@ -357,6 +365,7 @@ RibbonBar::RibbonBar(QWidget* parent)
     _tabRow->setContentsMargins(0, 0, 0, 0);
     _tabRow->addWidget(_homeButton);
     _tabRow->addStretch();
+    setupSearchAndHelp();
     layout->addLayout(_tabRow);
 
     _scrollArea->setObjectName(QStringLiteral("RibbonScrollArea"));
@@ -379,6 +388,72 @@ RibbonBar::RibbonBar(QWidget* parent)
     _scrollArea->horizontalScrollBar()->installEventFilter(this);
     _panel->installEventFilter(this);
     updateScrollAreaHeight();
+}
+
+void RibbonBar::setupSearchAndHelp()
+{
+    // Command search on the right of the tab row, like the command palette of other apps
+    auto search = new QLineEdit(this);
+    search->setObjectName(QStringLiteral("RibbonSearch"));
+    search->setPlaceholderText(tr("Search commands (Ctrl+K)"));
+    search->setToolTip(tr("Type at least three characters to find a command, "
+                          "press Enter to run it"));
+    search->setClearButtonEnabled(true);
+    search->setFixedWidth(280);
+    search->addAction(searchIcon(), QLineEdit::LeadingPosition);
+    // Rounded, with a neutral border that works on light and dark themes
+    search->setStyleSheet(QStringLiteral(
+        "#RibbonSearch { border: 1px solid rgba(128, 128, 128, 110); border-radius: 8px;"
+        "  padding: 4px 6px; }"
+        "#RibbonSearch:focus { border: 1px solid palette(highlight); }"
+    ));
+
+    auto completer = new CommandCompleter(search, search);
+    connect(completer, &CommandCompleter::commandActivated, this, [search](const QByteArray& name) {
+        search->clear();
+        search->clearFocus();
+        Application::Instance->commandManager().runCommandByName(name.constData());
+    });
+
+    auto shortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_K), this);
+    shortcut->setContext(Qt::WindowShortcut);
+    connect(shortcut, &QShortcut::activated, search, [search] {
+        search->setFocus(Qt::ShortcutFocusReason);
+        search->selectAll();
+    });
+
+    _tabRow->addWidget(search);
+
+    // Help, the same as Help > Help (F1)
+    auto help = new QToolButton(this);
+    help->setObjectName(QStringLiteral("RibbonHelpButton"));
+    help->setToolTip(tr("Opens the Help documentation"));
+    help->setIcon(BitmapFactory().iconFromTheme("help-browser"));
+    help->setIconSize(QSize(20, 20));
+    help->setAutoRaise(true);
+    connect(help, &QToolButton::clicked, this, [] {
+        Application::Instance->commandManager().runCommandByName("Std_OnlineHelp");
+    });
+    _tabRow->addWidget(help);
+}
+
+QIcon RibbonBar::searchIcon() const
+{
+    // A magnifier drawn in the text color, so it matches the theme
+    const qreal ratio = devicePixelRatioF();
+    QPixmap pixmap(QSize(16, 16) * ratio);
+    pixmap.setDevicePixelRatio(ratio);
+    pixmap.fill(Qt::transparent);
+
+    QColor color = palette().color(QPalette::PlaceholderText);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(color, 1.6, Qt::SolidLine, Qt::RoundCap));
+    painter.drawEllipse(QRectF(2.0, 2.0, 8.5, 8.5));
+    painter.drawLine(QPointF(9.5, 9.5), QPointF(14.0, 14.0));
+    painter.end();
+
+    return QIcon(pixmap);
 }
 
 bool RibbonBar::eventFilter(QObject* source, QEvent* ev)

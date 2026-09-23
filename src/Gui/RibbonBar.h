@@ -31,6 +31,7 @@
 
 class QAction;
 class QHBoxLayout;
+class QIcon;
 class QLabel;
 class QScrollArea;
 class QToolBar;
@@ -127,6 +128,8 @@ protected:
 
 private:
     static bool isGeneralToolBar(const QToolBar* toolbar);
+    void setupSearchAndHelp();
+    QIcon searchIcon() const;
     void buildHomePage();
     void onGroupDestroyed(QObject* group);
     void onWorkbenchTabClicked();
