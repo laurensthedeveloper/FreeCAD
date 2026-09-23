@@ -49,6 +49,8 @@ PROPERTY_SOURCE(Gui::ViewProviderLine, Gui::ViewProviderDatum)
 ViewProviderLine::ViewProviderLine()
 {
     sPixmap = "Std_Axis";
+    // Slightly thicker than the other datums, so the axes stand out from the grid
+    lineThickness = 3.0;
 
     pLabel = new SoFrameLabel();
     pLabel->textColor.setValue(1.0, 1.0, 1.0);
