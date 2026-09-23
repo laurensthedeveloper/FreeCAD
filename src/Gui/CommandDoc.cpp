@@ -52,6 +52,7 @@
 #include "DockWindowManager.h"
 #include "FileDialog.h"
 #include "MainWindow.h"
+#include "ModelPanel.h"
 #include "Selection.h"
 #include "Dialogs/DlgObjectSelection.h"
 #include "Dialogs/DlgProjectInformationImp.h"
@@ -2184,6 +2185,10 @@ StdCmdProperties::StdCmdProperties()
 void StdCmdProperties::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+    if (auto panel = Gui::ModelPanel::instance()) {
+        panel->showProperties();
+        return;
+    }
     auto dw = Gui::DockWindowManager::instance();
     if (auto propertyView = dw->getDockWindow("Property view")) {
         dw->activate(propertyView);

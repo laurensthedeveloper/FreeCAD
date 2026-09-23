@@ -1161,6 +1161,7 @@ SOURCE_GROUP("View3D\\Inventor" FILES ${Inventor_SRCS})
 SET(Widget_CPP_SRCS
     ComboLinks.cpp
     DocumentBar.cpp
+    ModelPanel.cpp
     FileDialog.cpp
     MainWindow.cpp
     MainWindowPy.cpp
@@ -1193,6 +1194,7 @@ endif(WIN32)
 SET(Widget_HPP_SRCS
     ComboLinks.h
     DocumentBar.h
+    ModelPanel.h
     FileDialog.h
     FileDialogInternal.h
     MainWindow.h

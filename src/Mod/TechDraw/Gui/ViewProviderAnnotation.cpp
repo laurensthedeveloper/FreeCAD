@@ -26,6 +26,7 @@
 #include <App/DocumentObject.h>
 #include <Gui/ComboView.h>
 #include <Gui/DockWindowManager.h>
+#include <Gui/MainWindow.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/propertyeditor/PropertyEditor.h>
 #include <Gui/propertyeditor/PropertyModel.h>
@@ -114,12 +115,12 @@ bool ViewProviderAnnotation::setEdit(int ModNum)
     // does not change. In case this modus operandi gets used more
     // often, this should be delegated to a utility function that takes a property
     // path and opens the "deepest" editor of that property
-    auto comboView = qobject_cast<Gui::DockWnd::ComboView*>(
-        Gui::DockWindowManager::instance()->getDockWindow("Model"));
-    if (!comboView) {
-        return false;
+    // The properties are in the Model dock window, or float over the 3D view
+    QWidget* container = Gui::DockWindowManager::instance()->getDockWindow("Model");
+    if (!container) {
+        container = Gui::getMainWindow();
     }
-    auto dataPropView = comboView->findChild<Gui::PropertyEditor::PropertyEditor*>(
+    auto dataPropView = container->findChild<Gui::PropertyEditor::PropertyEditor*>(
         QStringLiteral("propertyEditorData"));
     if (!dataPropView) {
         return false;

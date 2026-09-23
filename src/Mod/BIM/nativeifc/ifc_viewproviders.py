@@ -190,6 +190,9 @@ class ifc_vp_object:
         # expand the item in the tree view
         mw = FreeCADGui.getMainWindow()
         tree = mw.findChild(QtGui.QDockWidget, "Model")
+        if not tree:
+            # no Model dock window, e.g. the tree floats over the 3D view
+            return
         model = tree.findChild(QtGui.QWidget, "Model")
         splitter = model.findChild(QtGui.QSplitter)
         if splitter and len(splitter.children()) > 1:

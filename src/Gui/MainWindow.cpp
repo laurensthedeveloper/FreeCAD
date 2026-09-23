@@ -111,6 +111,7 @@
 #include "SplashScreen.h"
 #include "StatusBarLabel.h"
 #include "DocumentBar.h"
+#include "ModelPanel.h"
 #include "ToolBarAreaWidget.h"
 #include "ToolBarManager.h"
 #include "ToolBoxManager.h"
@@ -352,6 +353,8 @@ struct MainWindowP
     int actionUpdateDelay = 0;
     QMap<QString, QPointer<UrlHandler>> urlHandler;
     std::string hiddenDockWindows;
+    // the tree and properties float over the 3D view instead of being dock windows
+    bool useModelPanel = false;
     fastsignals::advanced_scoped_connection connParam;
     ParameterGrp::handle hGrp;
     bool _restoring = false;
@@ -717,6 +720,7 @@ void MainWindow::setupDockWindows()
     setupPythonConsole();
     setupSelectionView();
     setupTaskView();
+    setupModelPanel();
 
     initDockWindows(false);
 
@@ -752,6 +756,15 @@ bool MainWindow::setupTaskView()
     }
 
     return false;
+}
+
+void MainWindow::setupModelPanel()
+{
+    // Read once, the panel cannot be swapped for the dock windows at runtime
+    d->useModelPanel = d->hGrp->GetBool("FloatingModelPanel", true);
+    if (d->useModelPanel && !ModelPanel::instance()) {
+        new ModelPanel(d->mdiArea);
+    }
 }
 
 bool MainWindow::setupSelectionView()
@@ -817,7 +830,7 @@ bool MainWindow::updateTreeView(bool show)
                                          ->GetGroup("Preferences")
                                          ->GetGroup("DockWindows")
                                          ->GetGroup("TreeView");
-        bool enabled = group->GetBool("Enabled", false);
+        bool enabled = group->GetBool("Enabled", false) && !d->useModelPanel;
         _updateDockWidget("Std_TreeView", enabled, show, Qt::RightDockWidgetArea, [](QWidget* widget) {
             if (widget) {
                 return widget;
@@ -847,7 +860,7 @@ bool MainWindow::updatePropertyView(bool show)
                                          ->GetGroup("Preferences")
                                          ->GetGroup("DockWindows")
                                          ->GetGroup("PropertyView");
-        bool enabled = group->GetBool("Enabled", false);
+        bool enabled = group->GetBool("Enabled", false) && !d->useModelPanel;
         _updateDockWidget("Std_PropertyView", enabled, show, Qt::RightDockWidgetArea, [](QWidget* widget) {
             if (widget) {
                 return widget;
@@ -904,7 +917,7 @@ bool MainWindow::updateComboView(bool show)
                                          ->GetGroup("Preferences")
                                          ->GetGroup("DockWindows")
                                          ->GetGroup("ComboView");
-        bool enable = group->GetBool("Enabled", true);
+        bool enable = group->GetBool("Enabled", true) && !d->useModelPanel;
         _updateDockWidget("Std_ComboView", enable, show, Qt::LeftDockWidgetArea, [](QWidget* widget) {
             auto pcComboView = qobject_cast<ComboView*>(widget);
             if (widget) {

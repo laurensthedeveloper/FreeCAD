@@ -362,6 +362,7 @@ protected:
 private:
     void setupDockWindows();
     bool setupTaskView();
+    void setupModelPanel();
     bool setupSelectionView();
     bool setupReportView();
     bool setupPythonConsole();

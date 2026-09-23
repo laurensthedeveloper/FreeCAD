@@ -31,6 +31,7 @@
 #include <Gui/ComboView.h>
 #include <Gui/DockWindowManager.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ModelPanel.h>
 #include <Gui/Document.h>
 
 #include "Control.h"
@@ -130,6 +131,10 @@ void ControlSingleton::showTaskView()
 
 void ControlSingleton::showModelView()
 {
+    if (auto panel = Gui::ModelPanel::instance()) {
+        panel->showModel();
+        return;
+    }
     auto treeView = qobject_cast<Gui::TreeDockWidget*>(
         Gui::DockWindowManager::instance()->getDockWindow("Tree view")
     );
