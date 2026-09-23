@@ -25,7 +25,13 @@
 #include "DockWindow.h"
 
 
+class QFrame;
+class QLabel;
+class QMenu;
+class QSplitter;
+class QTabBar;
 class QTabWidget;
+class QToolButton;
 class QTreeView;
 
 namespace App
@@ -84,9 +90,34 @@ public:
 
     friend class Gui::ControlSingleton;
 
+    /// Collapses the properties card to its header, or expands it again
+    void setPropertyCollapsed(bool collapsed);
+    bool isPropertyCollapsed() const;
+
+protected:
+    void changeEvent(QEvent* e) override;
+    bool eventFilter(QObject* o, QEvent* e) override;
+
+private:
+    void retranslateUi();
+    void updateSections();
+    void populateCreateMenu();
+
 private:
     Gui::PropertyView* prop;
     Gui::TreePanel* tree;
+    QSplitter* splitter;
+    QFrame* modelCard;
+    QWidget* modelHeader;
+    QTabBar* tabBar;
+    QToolButton* createButton;
+    QMenu* createMenu;
+    QFrame* propCard;
+    QFrame* propHeader;
+    QLabel* propTitle;
+    QToolButton* collapseButton;
+    QList<int> expandedSizes;
+    bool propCollapsed = false;
 };
 
 }  // namespace DockWnd

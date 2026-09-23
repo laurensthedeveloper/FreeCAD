@@ -262,10 +262,6 @@ QDockWidget* DockWindowManager::addDockWindow(const char* name, QWidget* widget,
     MainWindow* mw = getMainWindow();
     dw = new QDockWidget(mw);
 
-    if (d->overlayManager) {
-        d->overlayManager->setupTitleBar(dw);
-    }
-
     // Note: By default all dock widgets are hidden but the user can show them manually in the view
     // menu. First, hide immediately the dock widget to avoid flickering, after setting up the dock
     // widgets MainWindow::loadLayoutSettings() is called to restore the layout.
@@ -285,6 +281,11 @@ QDockWidget* DockWindowManager::addDockWindow(const char* name, QWidget* widget,
     // add the widget to the dock widget
     widget->setParent(dw);
     dw->setWidget(widget);
+
+    // after setWidget(), as the title bar depends on the embedded widget
+    if (d->overlayManager) {
+        d->overlayManager->setupTitleBar(dw);
+    }
 
     // set object name and window title needed for i18n stuff
     dw->setObjectName(QString::fromUtf8(name));
