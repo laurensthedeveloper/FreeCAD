@@ -95,7 +95,6 @@ SoFCGroundGrid::SoFCGroundGrid()
     SO_NODE_ADD_FIELD(color, (SbColor(1.0F, 1.0F, 1.0F)));
     SO_NODE_ADD_FIELD(xAxisColor, (SbColor(0.85F, 0.2F, 0.2F)));
     SO_NODE_ADD_FIELD(yAxisColor, (SbColor(0.2F, 0.7F, 0.2F)));
-    SO_NODE_ADD_FIELD(zAxisColor, (SbColor(0.2F, 0.3F, 0.9F)));
     SO_NODE_ADD_FIELD(glowColor, (SbColor(1.0F, 1.0F, 1.0F)));
 
     // The geometry depends on the camera, so it must not be cached
@@ -179,7 +178,7 @@ SoFCGroundGrid::SoFCGroundGrid()
     addChild(gridLines);
 
     auto axisStyle = new SoDrawStyle;
-    axisStyle->lineWidth = 2.0F;
+    axisStyle->lineWidth = 1.0F;
     addChild(axisStyle);
 
     axisVertices = new SoVertexProperty;
@@ -248,7 +247,6 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
     next.color = color.getValue().getPackedValue();
     next.xAxisColor = xAxisColor.getValue().getPackedValue();
     next.yAxisColor = yAxisColor.getValue().getPackedValue();
-    next.zAxisColor = zAxisColor.getValue().getPackedValue();
     next.glowColor = glowColor.getValue().getPackedValue();
     if (next == geometryState) {
         return;  // also prevents a redraw on every frame, as setting the geometry notifies
@@ -344,15 +342,6 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
             SbVec3f(0.0F, cy, 0.0F),
             SbVec3f(0.0F, cy + extent, 0.0F),
             packColor(yAxisColor.getValue(), axisAlpha * fade(std::abs(cx) / extent))
-        );
-    }
-    const float originDistance = std::max(std::abs(cx), std::abs(cy));
-    if (originDistance <= extent) {
-        addLine(
-            SbVec3f(0.0F, 0.0F, -extent),
-            SbVec3f(0.0F, 0.0F, 0.0F),
-            SbVec3f(0.0F, 0.0F, extent),
-            packColor(zAxisColor.getValue(), axisAlpha * fade(originDistance / extent))
         );
     }
 

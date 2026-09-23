@@ -36,7 +36,7 @@ namespace Gui
 {
 
 /**
- * A grid on the XY plane with the X, Y and Z axes through the origin. The spacing of
+ * A grid on the XY plane with the X and Y axes through the origin. The spacing of
  * the grid follows the zoom level and the grid fades out towards its border, so that
  * it appears to be endless.
  */
@@ -54,7 +54,6 @@ public:
     SoSFColor color;  //!< color of the grid lines
     SoSFColor xAxisColor;
     SoSFColor yAxisColor;
-    SoSFColor zAxisColor;
     SoSFColor glowColor;  //!< color of the light spot on the ground
 
     void GLRenderBelowPath(SoGLRenderAction* action) override;
@@ -74,7 +73,6 @@ private:
         uint32_t color {0};
         uint32_t xAxisColor {0};
         uint32_t yAxisColor {0};
-        uint32_t zAxisColor {0};
         uint32_t glowColor {0};
 
         bool operator==(const GeometryState&) const = default;
