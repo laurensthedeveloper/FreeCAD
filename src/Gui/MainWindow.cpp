@@ -110,6 +110,7 @@
 #include "SelectionView.h"
 #include "SplashScreen.h"
 #include "StatusBarLabel.h"
+#include "ToolBarAreaWidget.h"
 #include "ToolBarManager.h"
 #include "ToolBoxManager.h"
 #include "Utilities.h"
@@ -1697,7 +1698,9 @@ void MainWindow::populateToolBarMenu(QMenu* menu)
     for (const auto& toolbar : toolbars) {
         if (auto parent = toolbar->parentWidget()) {
             if (parent == this || parent == statusBar() || parent->parentWidget() == statusBar()
-                || parent->parentWidget() == menuBar()) {
+                || parent->parentWidget() == menuBar()
+                || ToolBarManager::getInstance()->toolBarArea(toolbar)
+                    == ToolBarArea::RibbonToolBarArea) {
                 QAction* action = toolbar->toggleViewAction();
                 action->setToolTip(tr("Toggles this toolbar"));
                 action->setStatusTip(tr("Toggles this toolbar"));

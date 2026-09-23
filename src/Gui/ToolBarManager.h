@@ -43,6 +43,7 @@ class QMouseEvent;
 namespace Gui
 {
 
+class RibbonBar;
 class ToolBarAreaWidget;
 enum class ToolBarArea;
 
@@ -206,6 +207,7 @@ private:
     void setupParameters();
     void setupStatusBar();
     void setupMenuBar();
+    void setupRibbon();
     void setupConnection();
     void setupTimer();
     void setupSizeTimer();
@@ -229,6 +231,7 @@ private:
     ToolBarAreaWidget* statusBarAreaWidget = nullptr;
     ToolBarAreaWidget* menuBarLeftAreaWidget = nullptr;
     ToolBarAreaWidget* menuBarRightAreaWidget = nullptr;
+    RibbonBar* ribbonBar = nullptr;
     ParameterGrp::handle hGeneral;
     ParameterGrp::handle hPref;
     ParameterGrp::handle hStatusBar;

@@ -385,8 +385,10 @@ void WorkbenchTabWidget::setToolBarArea(Gui::ToolBarArea area)
         case Gui::ToolBarArea::BottomToolBarArea:
         case Gui::ToolBarArea::LeftMenuToolBarArea:
         case Gui::ToolBarArea::RightMenuToolBarArea:
-        case Gui::ToolBarArea::StatusBarToolBarArea: {
+        case Gui::ToolBarArea::StatusBarToolBarArea:
+        case Gui::ToolBarArea::RibbonToolBarArea: {
             bool isTop = area == Gui::ToolBarArea::TopToolBarArea
+                || area == Gui::ToolBarArea::RibbonToolBarArea
                 || area == Gui::ToolBarArea::LeftMenuToolBarArea
                 || area == Gui::ToolBarArea::RightMenuToolBarArea;
 

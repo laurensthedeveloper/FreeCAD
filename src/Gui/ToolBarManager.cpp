@@ -44,6 +44,7 @@
 #include "Command.h"
 #include "MainWindow.h"
 #include "OverlayWidgets.h"
+#include "RibbonBar.h"
 #include "WidgetFactory.h"
 
 
@@ -405,6 +406,7 @@ ToolBarManager::ToolBarManager()
     setupParameters();
     setupStatusBar();
     setupMenuBar();
+    setupRibbon();
 
     setupSizeTimer();
     setupResizeTimer();
@@ -473,6 +475,33 @@ void ToolBarManager::setupMenuBar()
         mb->setCornerWidget(menuBarRightAreaWidget, Qt::TopRightCorner);
         menuBarRightAreaWidget->show();
     }
+}
+
+void ToolBarManager::setupRibbon()
+{
+    auto hMainWindow = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/MainWindow"
+    );
+    if (!hMainWindow->GetBool("RibbonBar", true)) {
+        return;
+    }
+
+    // The ribbon lives in a fixed toolbar so that it takes part in the main window layout
+    // above the dock widgets, like the regular toolbars do.
+    auto mw = getMainWindow();
+    auto host = new QToolBar(mw);
+    host->setObjectName(QStringLiteral("*RibbonHost"));
+    host->setMovable(false);
+    host->setFloatable(false);
+    host->setAllowedAreas(Qt::TopToolBarArea);
+    host->setContextMenuPolicy(Qt::PreventContextMenu);
+    host->toggleViewAction()->setVisible(false);
+
+    ribbonBar = new RibbonBar(host);
+    host->addWidget(ribbonBar);
+
+    mw->addToolBar(Qt::TopToolBarArea, host);
+    mw->addToolBarBreak(Qt::TopToolBarArea);
 }
 
 void ToolBarManager::setupConnection()
@@ -559,6 +588,10 @@ void Gui::ToolBarManager::setupWidgetProducers()
 
 ToolBarArea ToolBarManager::toolBarArea(QWidget* widget) const
 {
+    if (ribbonBar && ribbonBar->contains(widget)) {
+        return ToolBarArea::RibbonToolBarArea;
+    }
+
     if (auto toolBar = qobject_cast<QToolBar*>(widget)) {
         if (toolBar->isFloating()) {
             return ToolBarArea::NoToolBarArea;
@@ -714,7 +747,12 @@ void ToolBarManager::setup(ToolBarItem* toolBarItems)
             toolbar->setWindowTitle(QApplication::translate("Workbench", toolbarName.c_str()));
             toolbar->setObjectName(name);
 
-            getMainWindow()->addToolBar(toolbar);
+            if (ribbonBar) {
+                ribbonBar->addToolBar(toolbar);
+            }
+            else {
+                getMainWindow()->addToolBar(toolbar);
+            }
             setToolBarIconSize(toolbar);
 
             if (nameAsToolTip) {
@@ -767,7 +805,7 @@ void ToolBarManager::setup(ToolBarItem* toolBarItems)
 
         // try to add some breaks to avoid to have all toolbars in one line
         // only account for visible toolbars: hidden ones occupy no row space
-        if (toolbar_added && visible) {
+        if (toolbar_added && visible && !ribbonBar) {
             if (top_width > 0 && getMainWindow()->toolBarBreak(toolbar)) {
                 top_width = 0;
             }
@@ -802,6 +840,10 @@ void ToolBarManager::setup(ToolBarItem* toolBarItems)
         // hPref->SetBool(toolbarName.constData(), it->isVisible());
         it->hide();
         it->toggleViewAction()->setVisible(false);
+    }
+
+    if (ribbonBar) {
+        ribbonBar->setOrder(toolbarNames);
     }
 
     setMovable(!areToolBarsLocked());
@@ -902,10 +944,17 @@ void ToolBarManager::restoreState() const
                 mbRightToolBars[idx] = toolbar;
                 continue;
             }
-            if (toolbar->parentWidget() != getMainWindow()) {
+            if (ribbonBar) {
+                ribbonBar->addToolBar(toolbar);
+            }
+            else if (toolbar->parentWidget() != getMainWindow()) {
                 getMainWindow()->addToolBar(toolbar);
             }
         }
+    }
+
+    if (ribbonBar) {
+        ribbonBar->setOrder(toolbarNames);
     }
 
     setMovable(!areToolBarsLocked());
@@ -1248,7 +1297,8 @@ QList<ToolBar*> ToolBarManager::toolBars() const
     for (ToolBar* it : bars) {
         auto parent = it->parentWidget();
         if (parent == mw || parent == mw->statusBar() || parent == statusBarAreaWidget
-            || parent == menuBarLeftAreaWidget || parent == menuBarRightAreaWidget) {
+            || parent == menuBarLeftAreaWidget || parent == menuBarRightAreaWidget
+            || (ribbonBar && ribbonBar->contains(it))) {
             tb.push_back(it);
             it->installEventFilter(const_cast<ToolBarManager*>(this));
         }

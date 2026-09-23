@@ -43,6 +43,7 @@ enum class ToolBarArea
     LeftMenuToolBarArea,
     RightMenuToolBarArea,
     StatusBarToolBarArea,
+    RibbonToolBarArea,
 };
 
 class ToolBarAreaWidget: public QWidget
