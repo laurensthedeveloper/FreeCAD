@@ -2297,6 +2297,7 @@ void View3DInventorViewer::updateGroundGridColors()
 
     groundGrid->xAxisColor.setValue(m_xColor.r, m_xColor.g, m_xColor.b);
     groundGrid->yAxisColor.setValue(m_yColor.r, m_yColor.g, m_yColor.b);
+    groundGrid->zAxisColor.setValue(m_zColor.r, m_zColor.g, m_zColor.b);
 }
 
 void View3DInventorViewer::showRotationCenter(bool show)

@@ -33,6 +33,10 @@
 #include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/SbColor.h>
 
+#include <algorithm>
+#include <iterator>
+
+#include <App/Application.h>
 #include <App/Datums.h>
 #include <App/Document.h>
 #include <Gui/ViewParams.h>
@@ -226,15 +230,13 @@ void ViewProviderPlane::updatePlaneSize()
 
 unsigned long ViewProviderPlane::getColor(const std::string& role) const
 {
-    auto planesRoles = App::LocalCoordinateSystem::PlaneRoles;
-    if (role == planesRoles[0]) {
-        return ViewParams::instance()->getAxisZColor();  // XY-plane
-    }
-    else if (role == planesRoles[1]) {
-        return ViewParams::instance()->getAxisYColor();  // XZ-plane
-    }
-    else if (role == planesRoles[2]) {
-        return ViewParams::instance()->getAxisXColor();  // YZ-plane
+    // All the planes of the origin share one warm color, which stands apart from the
+    // colors of the axes and of the grid
+    const auto& planesRoles = App::LocalCoordinateSystem::PlaneRoles;
+    if (std::find(std::begin(planesRoles), std::end(planesRoles), role) != std::end(planesRoles)) {
+        return App::GetApplication()
+            .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+            ->GetUnsigned("OriginPlaneColor", 0xF28C38FF);  // orange
     }
     return 0;
 }

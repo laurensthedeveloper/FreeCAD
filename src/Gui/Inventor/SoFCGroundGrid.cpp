@@ -31,7 +31,8 @@
 #endif
 
 #include <Inventor/SbLine.h>
-#include <Inventor/SbPlane.h>
+#include <Inventor/SbMatrix.h>
+#include <Inventor/SbRotation.h>
 #include <Inventor/SbViewVolume.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoCacheElement.h>
@@ -72,6 +73,9 @@ constexpr float majorAlpha = 0.45F;
 constexpr float axisAlpha = 0.9F;
 // The spacing is chosen such that there are this many cells at most across the view
 constexpr float maxCellsInView = 40.0F;
+// Looking straight along an axis within about 0.8 degrees, as for the arrows of the
+// navigation cube
+constexpr float straightCosine = 0.9999F;
 // The light spot on the ground: its radius relative to the size of the view, its
 // opacity in the center and the number of rings and segments of the disk
 constexpr float glowSize = 0.9F;
@@ -110,6 +114,7 @@ SoFCGroundGrid::SoFCGroundGrid()
     SO_NODE_ADD_FIELD(color, (SbColor(1.0F, 1.0F, 1.0F)));
     SO_NODE_ADD_FIELD(xAxisColor, (SbColor(0.85F, 0.2F, 0.2F)));
     SO_NODE_ADD_FIELD(yAxisColor, (SbColor(0.2F, 0.7F, 0.2F)));
+    SO_NODE_ADD_FIELD(zAxisColor, (SbColor(0.2F, 0.3F, 0.9F)));
     SO_NODE_ADD_FIELD(glowColor, (SbColor(1.0F, 1.0F, 1.0F)));
 
     // The geometry depends on the camera, so it must not be cached
@@ -259,55 +264,89 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
 {
     SoCacheElement::invalidate(state);
 
-    // The grid is centered where the view direction meets the ground. For a view along
-    // the ground, or when looking away from it, the point of the view direction nearest
-    // to the origin is taken instead, dropped onto the ground. This must not depend on
-    // the near and far planes, which change with every frame while navigating.
     const SbViewVolume& volume = SoViewVolumeElement::get(state);
     SbLine viewLine;
     volume.projectPointToLine(SbVec2f(0.5F, 0.5F), viewLine);
     const SbVec3f position = viewLine.getPosition();
     const SbVec3f direction = viewLine.getDirection();
-    const SbPlane ground(SbVec3f(0.0F, 0.0F, 1.0F), 0.0F);
 
+    // The grid lies on the ground, the XY plane. When looking straight along one of the
+    // axes, as in the front or the right view, it lies in the plane facing the viewer
+    // instead, as the ground would only be seen edge-on.
+    int normalAxis = 2;
+    for (int axis = 0; axis < 3; ++axis) {
+        if (std::fabs(direction[axis]) > straightCosine) {
+            normalAxis = axis;
+        }
+    }
+    const int uAxis = normalAxis == 0 ? 1 : 0;
+    const int vAxis = normalAxis == 2 ? 1 : 2;
+    auto unit = [](int axis) {
+        SbVec3f vector(0.0F, 0.0F, 0.0F);
+        vector[axis] = 1.0F;
+        return vector;
+    };
+    const SbVec3f u = unit(uAxis);
+    const SbVec3f v = unit(vAxis);
+    const SbVec3f normal = unit(normalAxis);
+
+    // The grid is centered where the view direction meets its plane. For a view along the
+    // plane, or when looking away from it, the point of the view direction nearest to the
+    // origin is taken instead, dropped onto the plane. This must not depend on the near
+    // and far planes, which change with every frame while navigating.
     SbVec3f center;
-    const bool hitsGround = std::fabs(direction[2]) > 0.15F && ground.intersect(viewLine, center)
-        && (center - position).dot(direction) > 0.0F;
-    if (!hitsGround) {
-        float distance = (SbVec3f(0.0F, 0.0F, 0.0F) - position).dot(direction);
+    const float facing = direction.dot(normal);
+    const float hitDistance = std::fabs(facing) > 0.15F ? -position.dot(normal) / facing : -1.0F;
+    if (hitDistance > 0.0F) {
+        center = position + direction * hitDistance;
+    }
+    else {
+        float distance = -position.dot(direction);
         if (volume.getProjectionType() == SbViewVolume::PERSPECTIVE) {
-            // In front of the camera, at least as far as the camera is above the ground.
+            // In front of the camera, at least as far as the camera is from the plane.
             // Not for an orthographic view, where the line starts at the near plane.
-            distance = std::max(distance, std::max(std::fabs(position[2]), 1.0e-3F));
+            distance = std::max(distance, std::max(std::fabs(position.dot(normal)), 1.0e-3F));
         }
         center = position + direction * distance;
-        center[2] = 0.0F;
     }
+    center -= normal * center.dot(normal);
 
     const float viewSize = volume.getWorldToScreenScale(center, 1.0F);
-    if (!std::isfinite(center[0]) || !std::isfinite(center[1]) || !std::isfinite(viewSize)
-        || viewSize <= 1.0e-6F) {
+    if (!std::isfinite(center[0]) || !std::isfinite(center[1]) || !std::isfinite(center[2])
+        || !std::isfinite(viewSize) || viewSize <= 1.0e-6F) {
         return;
     }
 
-    // The light spot is centered on the origin and scaled with the zoom level on every
-    // frame. Notifications are off, as the new scale is used by this traversal already
-    // and must not trigger another one.
+    // The light spot is centered on the origin, lies in the plane of the grid and is scaled
+    // with the zoom level on every frame. Notifications are off, as the new values are used
+    // by this traversal already and must not trigger another one.
     const SbVec3f glowScale(viewSize * glowSize, viewSize * glowSize, 1.0F);
-    if (glowTransform->scaleFactor.getValue() != glowScale) {
+    const SbVec3f w = u.cross(v);
+    // Rows are the images of the x, y and z axes of the disk
+    const SbRotation glowRotation(SbMatrix(
+        u[0], u[1], u[2], 0.0F,
+        v[0], v[1], v[2], 0.0F,
+        w[0], w[1], w[2], 0.0F,
+        0.0F, 0.0F, 0.0F, 1.0F
+    ));
+    if (glowTransform->scaleFactor.getValue() != glowScale
+        || !glowTransform->rotation.getValue().equals(glowRotation, 1.0e-6F)) {
         const SbBool notify = glowTransform->enableNotify(FALSE);
         glowTransform->scaleFactor.setValue(glowScale);
+        glowTransform->rotation.setValue(glowRotation);
         glowTransform->enableNotify(notify);
     }
 
     // Powers of ten, so that the lines are at round coordinates
     GeometryState next;
+    next.normalAxis = normalAxis;
     next.spacing = std::pow(10.0F, std::ceil(std::log10(viewSize / maxCellsInView)));
-    next.centerX = std::round(center[0] / next.spacing) * next.spacing;
-    next.centerY = std::round(center[1] / next.spacing) * next.spacing;
+    next.centerX = std::round(center.dot(u) / next.spacing) * next.spacing;
+    next.centerY = std::round(center.dot(v) / next.spacing) * next.spacing;
     next.color = color.getValue().getPackedValue();
     next.xAxisColor = xAxisColor.getValue().getPackedValue();
     next.yAxisColor = yAxisColor.getValue().getPackedValue();
+    next.zAxisColor = zAxisColor.getValue().getPackedValue();
     next.glowColor = glowColor.getValue().getPackedValue();
     if (next == geometryState) {
         return;  // also prevents a redraw on every frame, as setting the geometry notifies
@@ -349,6 +388,11 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
         counts.push_back(3);
     };
 
+    // Points in the plane of the grid, by their coordinates along u and v
+    auto at = [&](float a, float b) {
+        return u * a + v * b;
+    };
+
     const SbColor& gridColor = color.getValue();
     for (int i = -cellCount; i <= cellCount; ++i) {
         const float x = cx + static_cast<float>(i) * spacing;
@@ -359,22 +403,12 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
         const long long xIndex = std::llround(x / spacing);
         if (xIndex != 0) {
             const float alpha = (xIndex % majorEvery == 0 ? majorAlpha : minorAlpha) * fading;
-            addLine(
-                SbVec3f(x, cy - extent, 0.0F),
-                SbVec3f(x, cy, 0.0F),
-                SbVec3f(x, cy + extent, 0.0F),
-                packColor(gridColor, alpha)
-            );
+            addLine(at(x, cy - extent), at(x, cy), at(x, cy + extent), packColor(gridColor, alpha));
         }
         const long long yIndex = std::llround(y / spacing);
         if (yIndex != 0) {
             const float alpha = (yIndex % majorEvery == 0 ? majorAlpha : minorAlpha) * fading;
-            addLine(
-                SbVec3f(cx - extent, y, 0.0F),
-                SbVec3f(cx, y, 0.0F),
-                SbVec3f(cx + extent, y, 0.0F),
-                packColor(gridColor, alpha)
-            );
+            addLine(at(cx - extent, y), at(cx, y), at(cx + extent, y), packColor(gridColor, alpha));
         }
     }
 
@@ -389,20 +423,22 @@ void SoFCGroundGrid::updateGeometry(SoState* state)
     colors.clear();
     counts.clear();
 
+    // The two axes in the plane of the grid, in their own colors
+    const SoSFColor* axisColors[] = {&xAxisColor, &yAxisColor, &zAxisColor};
     if (std::abs(cy) <= extent) {
         addLine(
-            SbVec3f(cx - extent, 0.0F, 0.0F),
-            SbVec3f(cx, 0.0F, 0.0F),
-            SbVec3f(cx + extent, 0.0F, 0.0F),
-            packColor(xAxisColor.getValue(), axisAlpha * fade(std::abs(cy) / extent))
+            at(cx - extent, 0.0F),
+            at(cx, 0.0F),
+            at(cx + extent, 0.0F),
+            packColor(axisColors[uAxis]->getValue(), axisAlpha * fade(std::abs(cy) / extent))
         );
     }
     if (std::abs(cx) <= extent) {
         addLine(
-            SbVec3f(0.0F, cy - extent, 0.0F),
-            SbVec3f(0.0F, cy, 0.0F),
-            SbVec3f(0.0F, cy + extent, 0.0F),
-            packColor(yAxisColor.getValue(), axisAlpha * fade(std::abs(cx) / extent))
+            at(0.0F, cy - extent),
+            at(0.0F, cy),
+            at(0.0F, cy + extent),
+            packColor(axisColors[vAxis]->getValue(), axisAlpha * fade(std::abs(cx) / extent))
         );
     }
 
