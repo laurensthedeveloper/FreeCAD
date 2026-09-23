@@ -426,20 +426,28 @@ void RibbonBar::setupStyle()
         const char* bar;       // behind the tabs
         const char* tab;       // unselected tab
         const char* hover;     // tab under the mouse
-        const char* selected;  // selected tab
-        const char* accent;    // text of the selected tab
-        const char* card;      // panel with the commands
+        const char* border;    // outline of the unselected tabs
+        const char* accent;    // text and underline of the selected tab
+        const char* card;      // panel with the commands, also the selected tab
         const char* text;
     };
-    const Colors light {"#e9ecf0", "#dde1e7", "#d2d8e0", "#d6e4f7", "#1f5fbf", "#f9fafb", "#1f2328"};
-    const Colors darkColors {"#232529", "#2f3237", "#3a3e44", "#2f4260", "#8fbaff", "#2c2f34", "#e6e8eb"};
+    const Colors light {"#e9ecf0", "#f1f3f6", "#e3e7ec", "#d3d8df", "#1f5fbf", "#ffffff", "#1f2328"};
+    const Colors darkColors {"#232529", "#2a2d31", "#34373d", "#3d4148", "#8fbaff", "#2c2f34", "#e6e8eb"};
     const Colors& c = dark ? darkColors : light;
 
-    // Large rounded tabs for Home and the workbenches, above a rounded card with the
-    // commands. The workbench tabs are styled here as they are part of the ribbon.
+    // Outlined tabs for Home and the workbenches, above a rounded card with the commands.
+    // The selected tab takes the color of the card and is underlined with the accent
+    // color. The workbench tabs are styled here as they are part of the ribbon.
     const QString tab = QStringLiteral(
-        "background: %2; color: %7; border: none; border-top-left-radius: 10px;"
-        " border-top-right-radius: 10px; padding: 7px 14px; font-weight: 500;"
+        "background: %2; color: %7; border: 1px solid %4; border-bottom: 2px solid transparent;"
+        " border-top-left-radius: 8px; border-top-right-radius: 8px; padding: 6px 14px;"
+        " font-weight: 500;"
+    );
+    const QString selectedTab = QStringLiteral(
+        "background: %6; color: %5; border-color: %4; border-bottom: 2px solid %5;"
+    );
+    const QString unselectedTab = QStringLiteral(
+        "background: %2; color: %7; border-color: %4; border-bottom: 2px solid transparent;"
     );
     const QString sheet =
         (QStringLiteral("#RibbonBar { background: %1; }"
@@ -456,15 +464,28 @@ void RibbonBar::setupStyle()
          + QStringLiteral(
              " }"
              "#RibbonHomeButton:hover { background: %3; }"
-             "#RibbonHomeButton:checked { background: %4; color: %5; }"
+             "#RibbonHomeButton:checked { "
+         )
+         + selectedTab
+         + QStringLiteral(
+             " }"
              "#RibbonBar QTabBar::tab { "
          )
          + tab
          + QStringLiteral(
-             " margin-right: 6px; }"
+             " margin-right: 4px; }"
              "#RibbonBar QTabBar::tab:hover { background: %3; }"
-             "#RibbonBar QTabBar::tab:selected { background: %4; color: %5; }"
-             "#RibbonBar QTabBar[homeActive=\"true\"]::tab:selected { background: %2; color: %7; }"
+             "#RibbonBar QTabBar::tab:selected { "
+         )
+         + selectedTab
+         + QStringLiteral(
+             " }"
+             "#RibbonBar QTabBar[homeActive=\"true\"]::tab:selected { "
+         )
+         + unselectedTab
+         + QStringLiteral(
+             " }"
+             "#RibbonBar QTabBar[homeActive=\"true\"]::tab:selected:hover { background: %3; }"
              "#RibbonSettingsButton, #RibbonHelpButton { border: none; border-radius: 8px;"
              "  padding: 4px; background: transparent; }"
              "#RibbonSettingsButton:hover, #RibbonHelpButton:hover { background: %3; }"
@@ -485,7 +506,7 @@ void RibbonBar::setupStyle()
             .arg(QLatin1String(c.bar),
                  QLatin1String(c.tab),
                  QLatin1String(c.hover),
-                 QLatin1String(c.selected),
+                 QLatin1String(c.border),
                  QLatin1String(c.accent),
                  QLatin1String(c.card),
                  QLatin1String(c.text));
