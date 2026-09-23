@@ -1000,16 +1000,7 @@ public:
     void setupTitleBar(QDockWidget* dock)
     {
         auto* oldWidget = dock->titleBarWidget();
-        if (dock->widget() && dock->widget()->property("fcOwnTitleBar").toBool()) {
-            // the content draws its own header, hide the title bar like an overlay does
-            auto w = new QWidget();
-            w->setObjectName(QStringLiteral("OverlayTitle"));
-            dock->setTitleBarWidget(w);
-            w->hide();
-        }
-        else {
-            dock->setTitleBarWidget(createTitleBar(dock));
-        }
+        dock->setTitleBarWidget(createTitleBar(dock));
         if (oldWidget) {
             oldWidget->deleteLater();
         }
