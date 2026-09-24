@@ -15,7 +15,9 @@
 #include <QMdiSubWindow>
 #include <QMenu>
 #include <QMenuBar>
-#include <QRegion>
+#include <QPainter>
+#include <QPixmap>
+#include <QStyle>
 #include <QScrollBar>
 #include <QTabBar>
 #include <QTabWidget>
@@ -23,15 +25,19 @@
 #include <QTreeView>
 
 #include <App/Application.h>
+#include <App/Document.h>
+#include <App/DocumentObject.h>
 
 #include "ModelPanel.h"
 #include "Application.h"
 #include "BitmapFactory.h"
 #include "Command.h"
+#include "Document.h"
 #include "MainWindow.h"
 #include "MDIView.h"
 #include "PropertyView.h"
 #include "Tree.h"
+#include "ViewProvider.h"
 #include "propertyeditor/PropertyEditor.h"
 
 
@@ -42,18 +48,14 @@ namespace
 
 // Distance of the panel to the edges of the 3D view
 constexpr int Margin = 10;
-// Gap between the model card and the properties card
-constexpr int CardSpacing = 8;
 // Border width of the cards, see setupStyle()
 constexpr int CardBorder = 1;
 // The width follows the 3D view within these limits
 constexpr int MinWidth = 240;
 constexpr int MaxWidth = 340;
 constexpr int WidthPercent = 22;
-// Content height a card keeps when both do not fit
+// Content height used while the size of the content is unknown
 constexpr int MinContent = 60;
-// Share of the height the properties get when both cards do not fit
-constexpr int PropertyPercent = 45;
 
 QPointer<ModelPanel> panelInstance;
 
@@ -87,12 +89,37 @@ int contentHeight(const QTreeView* view, int limit)
     return height;
 }
 
+// Plus icon in the text color of the cards, the theme icon is colored
+QIcon plusIcon(const QColor& color)
+{
+    constexpr int size = 16;
+    QIcon icon;
+    for (qreal ratio : {1.0, 2.0}) {
+        QPixmap pixmap(QSize(size, size) * ratio);
+        pixmap.setDevicePixelRatio(ratio);
+        pixmap.fill(Qt::transparent);
+
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        QPen pen(color, 1.6);
+        pen.setCapStyle(Qt::RoundCap);
+        pen.setJoinStyle(Qt::RoundJoin);
+        painter.setPen(pen);
+        painter.drawLine(QPointF(8, 3), QPointF(8, 13));
+        painter.drawLine(QPointF(3, 8), QPointF(13, 8));
+        painter.end();
+        icon.addPixmap(pixmap);
+    }
+    return icon;
+}
+
 }  // namespace
 
 /* TRANSLATOR Gui::ModelPanel */
 
 ModelPanel::ModelPanel(QMdiArea* mdiArea)
     : QWidget(mdiArea)
+    , SelectionObserver(true, ResolveMode::NoResolve)
     , _mdiArea(mdiArea)
 {
     setObjectName(QStringLiteral("ModelPanel"));
@@ -100,7 +127,6 @@ ModelPanel::ModelPanel(QMdiArea* mdiArea)
 
     auto hGrp = panelParams();
     _minimized = hGrp->GetBool("Minimized", false);
-    _propertyCollapsed = hGrp->GetBool("PropertyCollapsed", false);
 
     setupModelCard();
     setupPropertyCard();
@@ -148,7 +174,7 @@ void ModelPanel::setupModelCard()
     connect(_createMenu, &QMenu::aboutToShow, this, &ModelPanel::populateCreateMenu);
     _createButton = new QToolButton(_modelHeader);
     _createButton->setObjectName(QStringLiteral("ModelPanelButton"));
-    _createButton->setIcon(BitmapFactory().iconFromTheme("list-add"));
+    _createButton->setIconSize(QSize(16, 16));
     _createButton->setAutoRaise(true);
     _createButton->setPopupMode(QToolButton::InstantPopup);
     _createButton->setMenu(_createMenu);
@@ -184,23 +210,19 @@ void ModelPanel::setupPropertyCard()
 
     _propertyHeader = new QFrame(_propertyCard);
     _propertyHeader->setObjectName(QStringLiteral("ModelPanelSectionHeader"));
-    _propertyHeader->setCursor(Qt::PointingHandCursor);
-    _propertyHeader->installEventFilter(this);
     auto header = new QHBoxLayout(_propertyHeader);
     header->setContentsMargins(2, 4, 0, 4);
+    header->setSpacing(6);
+    // icon and name of the selection, as the tree is hidden on the Property tab
+    _propertyIcon = new QLabel(_propertyHeader);
+    _propertyIcon->hide();
+    header->addWidget(_propertyIcon);
     _propertyTitle = new QLabel(_propertyHeader);
     QFont font = _propertyTitle->font();
     font.setBold(true);
     _propertyTitle->setFont(font);
     header->addWidget(_propertyTitle);
     header->addStretch();
-    _collapseButton = new QToolButton(_propertyHeader);
-    _collapseButton->setObjectName(QStringLiteral("ModelPanelButton"));
-    _collapseButton->setAutoRaise(true);
-    connect(_collapseButton, &QToolButton::clicked, this, [this]() {
-        setPropertyCollapsed(!_propertyCollapsed);
-    });
-    header->addWidget(_collapseButton);
     layout->addWidget(_propertyHeader);
 
     _properties = new PropertyView(_propertyCard);
@@ -208,6 +230,13 @@ void ModelPanel::setupPropertyCard()
     _properties->propertyEditorView->setHeaderHidden(true);
     _properties->propertyEditorData->setHeaderHidden(true);
     layout->addWidget(_properties);
+
+    // Shown instead of the empty editors while nothing is selected. The property view
+    // itself stays visible, as it stops following the selection when hidden.
+    _placeholder = new QLabel(_propertyCard);
+    _placeholder->setObjectName(QStringLiteral("ModelPanelPlaceholder"));
+    _placeholder->setWordWrap(true);
+    layout->addWidget(_placeholder);
 }
 
 void ModelPanel::connectContentSignals()
@@ -272,13 +301,28 @@ void ModelPanel::setupStyle()
     const Colors darkColors {"#3a3d42", "#4a4e55", "#45494f", "#e6e8eb", "#a0a4ab", "#5b9bff"};
     const Colors& c = dark ? darkColors : light;
 
-    // The panel itself stays transparent, so the rounded corners and the gap between
-    // the cards show the 3D view
+    // The panel itself stays transparent, so the rounded corners show the 3D view. On
+    // the Property tab the card with the tabs and the one with the properties are joined.
+    // The View and Data tabs get the flat look of the Model and Property tabs, with the
+    // line on top as they are below the properties.
     setStyleSheet(
         QStringLiteral(
             "#ModelPanelCard { background: %1; border: 1px solid %2; border-radius: 10px; }"
+            "#ModelPanelCard[joined=\"top\"] { border-bottom: none;"
+            "  border-bottom-left-radius: 0px; border-bottom-right-radius: 0px; }"
+            "#ModelPanelCard[joined=\"bottom\"] { border-top: none;"
+            "  border-top-left-radius: 0px; border-top-right-radius: 0px; }"
             "#ModelPanelCard QTreeView { background: transparent; border: none; }"
             "#ModelPanelCard QLabel { color: %4; }"
+            "#ModelPanelCard QLabel#ModelPanelPlaceholder { color: %5; padding: 6px 2px; }"
+            "QTabWidget#propertyTab::pane { border: none; background: transparent; }"
+            "QTabWidget#propertyTab::tab-bar { alignment: left; }"
+            "QTabWidget#propertyTab QTabBar::tab { color: %5; background: transparent;"
+            "  border: none; border-top: 2px solid transparent; padding: 4px 2px;"
+            "  margin: 2px 12px 0px 0px; min-width: 0px; }"
+            "QTabWidget#propertyTab QTabBar::tab:selected { color: %4;"
+            "  border-top: 2px solid %6; }"
+            "QTabWidget#propertyTab QTabBar::tab:hover:!selected { color: %4; }"
             "#ModelPanelTabs::tab { color: %5; background: transparent; border: none;"
             "  border-bottom: 2px solid transparent; padding: 5px 2px; margin-right: 12px; }"
             "#ModelPanelTabs::tab:selected { color: %4; border-bottom: 2px solid %6; }"
@@ -297,6 +341,9 @@ void ModelPanel::setupStyle()
             .arg(QLatin1String(c.muted))
             .arg(QLatin1String(c.accent))
     );
+
+    _glyphColor = QColor(QLatin1String(c.text));
+    _createButton->setIcon(plusIcon(_glyphColor));
 }
 
 void ModelPanel::retranslateUi()
@@ -305,8 +352,8 @@ void ModelPanel::retranslateUi()
     _tabs->setTabText(1, tr("Property"));
     _tabs->setToolTip(tr("Click the current tab to minimize or restore the panel"));
     _createButton->setToolTip(tr("Add to the model"));
-    _propertyTitle->setText(tr("Properties"));
-    _collapseButton->setToolTip(tr("Show or hide the properties"));
+    updatePropertyTitle();
+    _placeholder->setText(tr("Select an object to see its properties"));
 }
 
 void ModelPanel::changeEvent(QEvent* ev)
@@ -331,11 +378,6 @@ bool ModelPanel::eventFilter(QObject* source, QEvent* ev)
     }
     else if (source == _tree && ev->type() == QEvent::LayoutRequest) {
         scheduleLayout();
-    }
-    else if (source == _propertyHeader && ev->type() == QEvent::MouseButtonRelease) {
-        // a click anywhere on the header does the same as the chevron
-        setPropertyCollapsed(!_propertyCollapsed);
-        return true;
     }
     return QWidget::eventFilter(source, ev);
 }
@@ -371,9 +413,7 @@ void ModelPanel::showModel()
 void ModelPanel::showProperties()
 {
     setMinimized(false);
-    if (_tabs->currentIndex() == 0) {
-        setPropertyCollapsed(false);
-    }
+    _tabs->setCurrentIndex(1);
 }
 
 void ModelPanel::setMinimized(bool minimized)
@@ -383,16 +423,6 @@ void ModelPanel::setMinimized(bool minimized)
     }
     _minimized = minimized;
     panelParams()->SetBool("Minimized", minimized);
-    scheduleLayout();
-}
-
-void ModelPanel::setPropertyCollapsed(bool collapsed)
-{
-    if (_propertyCollapsed == collapsed) {
-        return;
-    }
-    _propertyCollapsed = collapsed;
-    panelParams()->SetBool("PropertyCollapsed", collapsed);
     scheduleLayout();
 }
 
@@ -441,8 +471,82 @@ int ModelPanel::treeHeight(int limit) const
     return height;
 }
 
-int ModelPanel::propertyHeight(int limit) const
+bool ModelPanel::hasProperties() const
 {
+    // Without a selection the model keeps its group rows ("Base", "Display", ...), the
+    // editor only hides them, as it does with hidden properties. So look for a row
+    // that is shown.
+    for (const QTreeView* editor : {static_cast<QTreeView*>(_properties->propertyEditorView),
+                                    static_cast<QTreeView*>(_properties->propertyEditorData)}) {
+        const QAbstractItemModel* model = editor->model();
+        if (!model) {
+            continue;
+        }
+        const QModelIndex root = editor->rootIndex();
+        for (int row = 0; row < model->rowCount(root); ++row) {
+            if (editor->isRowHidden(row, root)) {
+                continue;
+            }
+            const QModelIndex group = model->index(row, 0, root);
+            const int count = model->rowCount(group);
+            if (count == 0) {
+                return true;  // a property outside of a group
+            }
+            for (int child = 0; child < count; ++child) {
+                if (!editor->isRowHidden(child, group)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void ModelPanel::updatePropertyTitle()
+{
+    QIcon icon;
+    QString title = tr("Properties");
+    const auto selection = Selection().getSelection("*", ResolveMode::NoResolve);
+    if (selection.size() == 1 && selection.front().pObject) {
+        App::DocumentObject* obj = selection.front().pObject;
+        title = QString::fromUtf8(obj->Label.getValue());
+        if (auto vp = Application::Instance->getViewProvider(obj)) {
+            icon = vp->getIcon();
+        }
+    }
+    else if (selection.size() > 1) {
+        title = tr("%n objects", nullptr, int(selection.size()));
+    }
+    else if (auto gdoc = TreeWidget::selectedDocument(); gdoc && gdoc->getDocument()) {
+        // the property view shows the document when it is selected in the tree
+        title = QString::fromUtf8(gdoc->getDocument()->Label.getValue());
+        icon = QIcon(BitmapFactory().pixmap("Document"));
+    }
+    const int size = _propertyTitle->fontMetrics().height();
+    _propertyIcon->setPixmap(icon.isNull() ? QPixmap() : icon.pixmap(size, size));
+    _propertyIcon->setVisible(!icon.isNull());
+    _propertyTitle->setText(title);
+}
+
+void ModelPanel::onSelectionChanged(const SelectionChanges& msg)
+{
+    switch (msg.Type) {
+        case SelectionChanges::AddSelection:
+        case SelectionChanges::RmvSelection:
+        case SelectionChanges::SetSelection:
+        case SelectionChanges::ClrSelection:
+            scheduleLayout();
+            break;
+        default:  // preselection, it changes with every mouse move
+            break;
+    }
+}
+
+int ModelPanel::propertyHeight(int limit, int width) const
+{
+    if (!hasProperties()) {
+        return _placeholder->heightForWidth(width);
+    }
     auto tabs = _properties->findChild<QTabWidget*>(QStringLiteral("propertyTab"));
     if (!tabs) {
         return MinContent;
@@ -460,6 +564,22 @@ int ModelPanel::propertyHeight(int limit) const
     return height;
 }
 
+void ModelPanel::setCardsJoined(bool joined)
+{
+    if (_cardsJoined == joined) {
+        return;
+    }
+    _cardsJoined = joined;
+    _modelCard->setProperty("joined", joined ? QStringLiteral("top") : QString());
+    _propertyCard->setProperty("joined", joined ? QStringLiteral("bottom") : QString());
+    // the style sheet only picks up the changed property when polished again
+    for (QWidget* card : {static_cast<QWidget*>(_modelCard), static_cast<QWidget*>(_propertyCard)}) {
+        card->style()->unpolish(card);
+        card->style()->polish(card);
+        card->update();
+    }
+}
+
 void ModelPanel::layoutPanel()
 {
     if (!_mdiArea || !_hasDocumentView) {
@@ -475,79 +595,56 @@ void ModelPanel::layoutPanel()
         std::clamp(area.width() * WidthPercent / 100, MinWidth, MaxWidth)
     );
 
-    // The Model tab shows the tree with the properties below, the Property tab gives the
-    // whole height to the properties
+    // The Model tab shows only the tree, the Property tab only the properties. Their
+    // card is joined to the one with the tabs.
     const bool propertyTab = _tabs->currentIndex() == 1;
     const bool showTree = !_minimized && !propertyTab;
-    const bool showPropertyCard = !_minimized;
-    const bool showProperties = propertyTab || !_propertyCollapsed;
+    const bool showProperties = !_minimized && propertyTab;
+    setCardsJoined(showProperties);
 
     _tree->setVisible(showTree);
-    _propertyCard->setVisible(showPropertyCard);
-    _propertyHeader->setVisible(!propertyTab);
-    _properties->setVisible(showPropertyCard && showProperties);
-    _collapseButton->setArrowType(_propertyCollapsed ? Qt::RightArrow : Qt::DownArrow);
+    // Hidden, the property view also stops following the selection
+    _propertyCard->setVisible(showProperties);
+    _properties->setVisible(showProperties);
+    int propertyCardHeight = 0;
+    if (showProperties) {
+        updatePropertyTitle();
+        // Without a selection a hint replaces the empty editors and their tabs
+        const bool empty = !hasProperties();
+        if (auto tabs = _properties->findChild<QTabWidget*>(QStringLiteral("propertyTab"))) {
+            tabs->setVisible(!empty);
+        }
+        _placeholder->setVisible(empty);
 
-    // Heights the cards want to show everything
+        const QMargins margins = _propertyCard->layout()->contentsMargins();
+        const int contentWidth = width - margins.left() - margins.right() - 2 * CardBorder;
+        propertyCardHeight = margins.top() + margins.bottom()
+            + _propertyHeader->sizeHint().height() + 2 * CardBorder
+            + propertyHeight(area.height(), contentWidth);
+    }
+
+    // The heights follow the content, up to the height of the 3D view. Beyond that the
+    // tree or the properties scroll within their card.
     const QMargins modelMargins = _modelCard->layout()->contentsMargins();
-    const int modelChrome = modelMargins.top() + modelMargins.bottom()
+    int modelCardHeight = modelMargins.top() + modelMargins.bottom()
         + _modelHeader->sizeHint().height() + 2 * CardBorder;
-    const QMargins propertyMargins = _propertyCard->layout()->contentsMargins();
-    const int propertyChrome = propertyMargins.top() + propertyMargins.bottom()
-        + (propertyTab ? 0 : _propertyHeader->sizeHint().height()) + 2 * CardBorder;
-
-    int modelWanted = modelChrome;
     if (showTree) {
-        modelWanted += _modelCard->layout()->spacing() + treeHeight(area.height());
+        modelCardHeight += _modelCard->layout()->spacing() + treeHeight(area.height());
+        modelCardHeight = std::min(modelCardHeight, area.height());
     }
-    int propertyWanted = 0;
-    if (showPropertyCard) {
-        propertyWanted = propertyChrome + (showProperties ? propertyHeight(area.height()) : 0);
-    }
-
-    // Fit the cards into the 3D view. When both do not fit, the properties get part of
-    // the height and the tree the rest, and the space one of them does not need goes to
-    // the other. Both scroll within their card then.
-    int modelCardHeight = modelWanted;
-    int propertyCardHeight = propertyWanted;
-    const int space = area.height() - (showPropertyCard ? CardSpacing : 0);
-    if (modelCardHeight + propertyCardHeight > space) {
-        if (!showPropertyCard) {
-            modelCardHeight = std::max(modelChrome, space);
-        }
-        else if (!showTree) {
-            propertyCardHeight = std::max(propertyChrome, space - modelCardHeight);
-        }
-        else {
-            const int propertyMin = propertyChrome + (showProperties ? MinContent : 0);
-            propertyCardHeight = std::min(
-                propertyWanted,
-                std::max(propertyMin, space * PropertyPercent / 100)
-            );
-            modelCardHeight = std::min(
-                modelWanted,
-                std::max(modelChrome + MinContent, space - propertyCardHeight)
-            );
-            propertyCardHeight
-                = std::max(propertyChrome, std::min(propertyWanted, space - modelCardHeight));
-        }
-    }
+    propertyCardHeight = std::min(propertyCardHeight, area.height() - modelCardHeight);
 
     _modelCard->setGeometry(0, 0, width, modelCardHeight);
     int height = modelCardHeight;
-    QRegion mask(_modelCard->geometry());
-    if (showPropertyCard) {
-        _propertyCard->setGeometry(0, modelCardHeight + CardSpacing, width, propertyCardHeight);
-        height += CardSpacing + propertyCardHeight;
-        mask += _propertyCard->geometry();
+    if (showProperties) {
+        _propertyCard->setGeometry(0, modelCardHeight, width, propertyCardHeight);
+        height += propertyCardHeight;
     }
 
     const QRect geometry(area.topLeft(), QSize(width, height));
     if (this->geometry() != geometry) {
         setGeometry(geometry);
     }
-    // Clicks into the gap between the cards reach the 3D view
-    setMask(mask);
     raise();
 }
 
